@@ -10,6 +10,7 @@ import {
   Target,
   ListChecks,
   CheckCircle2,
+  Pencil,
 } from "lucide-react"
 import { PageHeader } from "@/components/page-header"
 import { Button } from "@/components/ui/button"
@@ -41,35 +42,73 @@ const accommodationLibrary: Record<string, string> = {
 
 function SupportPlanContent() {
   const params = useSearchParams()
-  const learner =
-    getLearnerById(params.get("learner")) ?? learners[0]
-  const instructor = getInstructorById(params.get("instructor"))
-  const [notes, setNotes] = useState("")
-  const [approved, setApproved] = useState(false)
+  const learnerId = params.get("learner")
+  const instructorId = params.get("instructor")
+  const priority = params.get("priority") ?? "balanced"
+  const mode = params.get("mode") ?? "review"
+  const learner = getLearnerById(learnerId) ?? learners[0]
+  const instructor = getInstructorById(instructorId)
 
-  const focusAreas = focusAreasFor(learner.supportNeeds)
-  const accommodations = learner.supportNeeds
+  const defaultFocusAreas = focusAreasFor(learner.supportNeeds).join("\n")
+  const defaultAccommodations = learner.supportNeeds
     .map((n) => accommodationLibrary[n])
     .filter(Boolean)
+    .join("\n")
+
+  const [notes, setNotes] = useState("")
+  const [focusAreasDraft, setFocusAreasDraft] = useState(defaultFocusAreas)
+  const [accommodationsDraft, setAccommodationsDraft] = useState(defaultAccommodations)
+  const [approved, setApproved] = useState(false)
+
+  const workflowStatus = approved
+    ? "Approved"
+    : mode === "edit"
+      ? "Editing draft"
+      : "Draft review"
 
   return (
     <>
       <Button
-        render={<Link href="/match" />}
+        asChild
         variant="ghost"
         size="sm"
         className="mb-4 -ml-2"
       >
-        <ArrowLeft className="size-4" aria-hidden="true" />
-        Back to Match Center
+        <Link href="/match">
+          <ArrowLeft className="size-4" aria-hidden="true" />
+          Back to Match Center
+        </Link>
       </Button>
 
-      <PageHeader title="Support plan review" description="Review and finalize the draft plan. Nothing is committed until an educator gives final approval.">
-        <Badge className="border-transparent bg-accent text-accent-foreground">
+      <PageHeader
+        title="Support plan review"
+        description={
+          mode === "edit"
+            ? "Review the draft plan, make adjustments, and approve when ready. Nothing is committed until an educator gives final approval."
+            : "Review and finalize the draft plan. Nothing is committed until an educator gives final approval."
+        }
+      >
+        <Badge
+          className="border-transparent bg-accent text-accent-foreground"
+          role="status"
+          aria-live="polite"
+        >
           <Sparkles className="mr-1 size-3.5" aria-hidden="true" />
-          AI draft
+          Status: {workflowStatus}
         </Badge>
       </PageHeader>
+
+      <div className="mb-6 rounded-lg border border-border bg-card p-4 text-sm">
+        <p className="font-medium text-foreground">
+          Current state: {workflowStatus}
+        </p>
+        <p className="mt-1 text-muted-foreground">
+          Prototype only — edits are stored in the browser session and are not saved to a backend.
+        </p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Matching priority: {priority}
+        </p>
+      </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <div className="flex flex-col gap-6 lg:col-span-2">
@@ -126,9 +165,17 @@ function SupportPlanContent() {
                     </p>
                   </>
                 ) : (
-                  <p className="text-muted-foreground">
-                    No instructor assigned. Run a match to populate this plan.
-                  </p>
+                  <div className="flex flex-col gap-3 rounded-lg border border-dashed border-border bg-muted/30 p-4">
+                    <p className="font-medium text-foreground">
+                      No instructor selected yet. Run a match to assign an instructor.
+                    </p>
+                    <p className="text-muted-foreground">
+                      The support plan preview will populate once a match result is passed into this page.
+                    </p>
+                    <Button asChild variant="outline" className="w-fit">
+                      <Link href="/match">Run a match</Link>
+                    </Button>
+                  </div>
                 )}
               </CardContent>
             </Card>
@@ -143,17 +190,17 @@ function SupportPlanContent() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <ul className="flex flex-col gap-2">
-                {focusAreas.map((area) => (
-                  <li key={area} className="flex items-start gap-2 text-sm leading-relaxed">
-                    <CheckCircle2
-                      className="mt-0.5 size-4 shrink-0 text-primary"
-                      aria-hidden="true"
-                    />
-                    <span className="text-foreground">{area}</span>
-                  </li>
-                ))}
-              </ul>
+              <Label htmlFor="weekly-focus-areas" className="text-sm font-medium">
+                Weekly focus areas (one per line)
+              </Label>
+              <Textarea
+                id="weekly-focus-areas"
+                value={focusAreasDraft}
+                onChange={(e) => setFocusAreasDraft(e.target.value)}
+                placeholder="Add or revise focus areas..."
+                rows={5}
+                className="mt-2 bg-card"
+              />
             </CardContent>
           </Card>
 
@@ -166,17 +213,17 @@ function SupportPlanContent() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <ul className="flex flex-col gap-2">
-                {accommodations.map((a) => (
-                  <li key={a} className="flex items-start gap-2 text-sm leading-relaxed">
-                    <CheckCircle2
-                      className="mt-0.5 size-4 shrink-0 text-primary"
-                      aria-hidden="true"
-                    />
-                    <span className="text-foreground">{a}</span>
-                  </li>
-                ))}
-              </ul>
+              <Label htmlFor="recommended-accommodations" className="text-sm font-medium">
+                Recommended accommodations (one per line)
+              </Label>
+              <Textarea
+                id="recommended-accommodations"
+                value={accommodationsDraft}
+                onChange={(e) => setAccommodationsDraft(e.target.value)}
+                placeholder="Add or revise accommodations..."
+                rows={5}
+                className="mt-2 bg-card"
+              />
             </CardContent>
           </Card>
 
@@ -186,7 +233,7 @@ function SupportPlanContent() {
               <CardTitle>Educator notes</CardTitle>
             </CardHeader>
             <CardContent>
-              <Label htmlFor="educator-notes" className="sr-only">
+              <Label htmlFor="educator-notes" className="text-sm font-medium">
                 Educator notes
               </Label>
               <Textarea
@@ -195,7 +242,7 @@ function SupportPlanContent() {
                 onChange={(e) => setNotes(e.target.value)}
                 placeholder="Add context, adjustments, or goals for this learner…"
                 rows={5}
-                className="bg-card"
+                className="mt-2 bg-card"
               />
             </CardContent>
           </Card>
@@ -209,25 +256,44 @@ function SupportPlanContent() {
           <CardContent className="flex flex-col gap-4">
             {approved ? (
               <div
-                className="flex flex-col items-center gap-3 rounded-lg bg-secondary p-6 text-center"
+                className="flex flex-col items-center gap-4 rounded-lg border border-emerald-200 bg-emerald-50 p-6 text-center text-emerald-950"
                 role="status"
+                aria-live="polite"
               >
-                <span className="flex size-12 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                <span className="flex size-12 items-center justify-center rounded-full bg-emerald-600 text-white">
                   <Check className="size-6" aria-hidden="true" />
                 </span>
-                <p className="font-medium text-foreground">Support plan approved</p>
-                <p className="text-sm text-muted-foreground">
-                  {learner.name}
-                  {instructor ? ` is now paired with ${instructor.name}.` : "."}
-                </p>
-                <Button
-                  render={<Link href="/" />}
-                  variant="outline"
-                  size="sm"
-                  className="mt-1"
-                >
-                  Return to dashboard
+                <div className="space-y-1">
+                  <p className="font-semibold text-emerald-950">
+                    Support plan approved for demo review
+                  </p>
+                  <p className="text-sm text-emerald-900/80">
+                    {learner.name}
+                    {instructor ? ` is now paired with ${instructor.name}.` : "."}
+                  </p>
+                  <p className="text-sm text-emerald-900/80">
+                    Prototype only — no data has been saved to a backend yet.
+                  </p>
+                </div>
+                <Button disabled className="w-full" aria-label="Support plan approved">
+                  Approved
                 </Button>
+                <div className="flex w-full flex-col gap-3 pt-2">
+                  <Button asChild variant="outline" className="w-full">
+                    <Link href="/">Return to dashboard</Link>
+                  </Button>
+                  <Button asChild className="w-full">
+                    <Link href="/match">Run another match</Link>
+                  </Button>
+                  <Button
+                    onClick={() => setApproved(false)}
+                    variant="secondary"
+                    className="w-full"
+                  >
+                    <Pencil className="size-4" aria-hidden="true" />
+                    Re-open draft for editing
+                  </Button>
+                </div>
               </div>
             ) : (
               <>
@@ -235,16 +301,19 @@ function SupportPlanContent() {
                   By approving, you confirm this plan reflects your professional
                   judgment. You can edit notes above before approving.
                 </p>
-                <Button onClick={() => setApproved(true)} className="w-full">
+                <Button
+                  onClick={() => setApproved(true)}
+                  className="w-full bg-orange-500 text-white hover:bg-orange-600 focus-visible:ring-orange-500"
+                >
                   <Check className="size-4" aria-hidden="true" />
                   Approve support plan
                 </Button>
                 <Button
-                  render={<Link href="/match" />}
+                  asChild
                   variant="ghost"
                   className="w-full"
                 >
-                  Cancel
+                  <Link href="/match">Cancel</Link>
                 </Button>
               </>
             )}

@@ -56,7 +56,7 @@ function MatchResultContent() {
 
   const top = ranked[0]
   const alternatives = ranked.slice(1, 4)
-  const planHref = `/support-plan?learner=${learner.id}&instructor=${top.instructor.id}`
+  const planHref = `/support-plan?learner=${learner.id}&instructor=${top.instructor.id}&priority=${priority}`
 
   return (
     <>
@@ -151,19 +151,23 @@ function MatchResultContent() {
             </CardHeader>
             <CardContent className="flex flex-col gap-3">
               <Button
-                render={<Link href={planHref} />}
+                asChild
                 className="w-full justify-start"
               >
-                <Check className="size-4" aria-hidden="true" />
-                Approve & review plan
+                <Link href={`${planHref}&mode=review`}>
+                  <Check className="size-4" aria-hidden="true" />
+                  Approve & review plan
+                </Link>
               </Button>
               <Button
-                render={<Link href={planHref} />}
+                asChild
                 variant="outline"
                 className="w-full justify-start"
               >
-                <Pencil className="size-4" aria-hidden="true" />
-                Edit support plan
+                <Link href={`${planHref}&mode=edit`}>
+                  <Pencil className="size-4" aria-hidden="true" />
+                  Edit support plan
+                </Link>
               </Button>
               <Button
                 variant="ghost"
@@ -185,7 +189,7 @@ function MatchResultContent() {
                 {alternatives.map((alt) => (
                   <li
                     key={alt.instructor.id}
-                    className="flex items-center justify-between gap-3 py-3 [&:not(:last-child)]:border-b [&:not(:last-child)]:border-border"
+                    className="flex items-center justify-between gap-3 py-3 not-last:border-b not-last:border-border"
                   >
                     <div className="flex items-center gap-3">
                       <Avatar className="size-9">

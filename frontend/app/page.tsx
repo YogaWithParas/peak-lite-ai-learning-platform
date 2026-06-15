@@ -35,9 +35,11 @@ export default function DashboardPage() {
         title="Dashboard"
         description="A calm overview of your matching program. Every recommendation is a starting point — educators stay in control of final decisions."
       >
-        <Button render={<Link href="/match" />}>
-          <Sparkles className="size-4" aria-hidden="true" />
-          Run new match
+        <Button asChild>
+          <Link href="/match/result?learner=L-004&priority=balanced">
+            <Sparkles className="size-4" aria-hidden="true" />
+            Run new match
+          </Link>
         </Button>
       </PageHeader>
 
@@ -80,7 +82,7 @@ export default function DashboardPage() {
                 return (
                   <li
                     key={item.id}
-                    className="flex items-start gap-3 py-3 [&:not(:last-child)]:border-b [&:not(:last-child)]:border-border"
+                    className="flex items-start gap-3 py-3 not-last:border-b not-last:border-border"
                   >
                     <span
                       className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full bg-secondary text-primary"
@@ -109,13 +111,11 @@ export default function DashboardPage() {
               AI-assisted recommendation. You decide whether to approve, edit, or
               reject.
             </p>
-            <Button
-              render={<Link href="/match" />}
-              variant="secondary"
-              className="w-full justify-between"
-            >
-              Go to Match Center
-              <ArrowRight className="size-4" aria-hidden="true" />
+            <Button asChild variant="secondary" className="w-full justify-between">
+              <Link href="/match">
+                Go to Match Center
+                <ArrowRight className="size-4" aria-hidden="true" />
+              </Link>
             </Button>
           </CardContent>
         </Card>
