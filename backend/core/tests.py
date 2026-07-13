@@ -1,6 +1,8 @@
 from django.contrib.auth.models import User
+from django.core.cache import cache
 from rest_framework import status
 from rest_framework.test import APITestCase
+from rest_framework.throttling import ScopedRateThrottle
 
 from .models import Instructor, Learner, LearningPlan, MatchRecommendation, Profile
 
@@ -104,7 +106,7 @@ class MatchRecommendationTests(BaseSetup):
         self.client.force_authenticate(self.instructor_user)
         response = self.client.get("/api/match-recommendations/")
 
-        ids = [r["id"] for r in response.data]
+        ids = [r["id"] for r in response.data["results"]]
         self.assertIn(own_recommendation.id, ids)
         self.assertNotIn(other_recommendation.id, ids)
 
@@ -136,3 +138,35 @@ class LearningPlanTests(BaseSetup):
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
         self.plan.refresh_from_db()
         self.assertEqual(self.plan.status, LearningPlan.STATUS_DRAFT)
+
+
+class HardeningTests(BaseSetup):
+    def test_learner_list_is_paginated(self):
+        self.client.force_authenticate(self.case_manager)
+        response = self.client.get("/api/learners/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn("results", response.data)
+        self.assertIn("count", response.data)
+        self.assertEqual(response.data["count"], Learner.objects.count())
+
+    def test_match_recommendation_creation_is_throttled(self):
+        # ScopedRateThrottle.THROTTLE_RATES is bound from settings once at import
+        # time, so override_settings() alone won't lower it for this test --
+        # patch the class attribute directly instead, and restore it after.
+        cache.clear()
+        original_rates = ScopedRateThrottle.THROTTLE_RATES
+        ScopedRateThrottle.THROTTLE_RATES = {**original_rates, "match_recommendations": "1/min"}
+        try:
+            self.client.force_authenticate(self.case_manager)
+            first = self.client.post(
+                "/api/match-recommendations/", {"learner_id": self.learner.id}, format="json"
+            )
+            second = self.client.post(
+                "/api/match-recommendations/", {"learner_id": self.learner.id}, format="json"
+            )
+        finally:
+            ScopedRateThrottle.THROTTLE_RATES = original_rates
+
+        self.assertEqual(first.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(second.status_code, status.HTTP_429_TOO_MANY_REQUESTS)

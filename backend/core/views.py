@@ -1,8 +1,10 @@
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import permissions, viewsets
+from rest_framework.authtoken.views import ObtainAuthToken
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from rest_framework.throttling import ScopedRateThrottle
 
 from .ai import generate_ai_draft_stub
 from .matching import find_suitable_instructors
@@ -15,6 +17,13 @@ from .serializers import (
     MatchRecommendationResultSerializer,
     MatchRecommendationSerializer,
 )
+
+
+class ThrottledObtainAuthToken(ObtainAuthToken):
+    """Same login behavior as DRF's default, rate-limited to blunt brute-force attempts."""
+
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "login"
 
 
 class LearnerViewSet(viewsets.ModelViewSet):
@@ -70,6 +79,12 @@ class MatchRecommendationViewSet(viewsets.ModelViewSet):
         if self.action in ("create", "approve", "reject"):
             return [IsAdminOrCaseManager()]
         return [permissions.IsAuthenticated()]
+
+    def get_throttles(self):
+        if self.action == "create":
+            self.throttle_scope = "match_recommendations"
+            return [ScopedRateThrottle()]
+        return super().get_throttles()
 
     def get_queryset(self):
         role = get_role(self.request.user)

@@ -77,6 +77,15 @@ export interface ApiLearner {
   family_user: number | null
 }
 
+// List endpoints are paginated (20/page): {count, next, previous, results}.
+export interface PaginatedResponse<T> {
+  count: number
+  next: string | null
+  previous: string | null
+  results: T[]
+}
+
 export async function listLearners(): Promise<ApiLearner[]> {
-  return request<ApiLearner[]>("/api/learners/")
+  const page = await request<PaginatedResponse<ApiLearner>>("/api/learners/")
+  return page.results
 }
