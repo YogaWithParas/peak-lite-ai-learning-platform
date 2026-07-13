@@ -17,6 +17,11 @@ function setStoredToken(token: string) {
   window.localStorage.setItem(TOKEN_STORAGE_KEY, token)
 }
 
+export function logout(): void {
+  if (typeof window === "undefined") return
+  window.localStorage.removeItem(TOKEN_STORAGE_KEY)
+}
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = getStoredToken()
   const response = await fetch(`${API_URL}${path}`, {

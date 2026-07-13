@@ -182,6 +182,22 @@ Content-Type: application/json
 
 ## 8. Setup instructions
 
+### Option A: Docker Compose (fastest — Django + Postgres, one command)
+
+```bash
+cd backend
+cp .env.example .env            # defaults work as-is for local Docker use
+docker compose up                # builds the image, starts Postgres, runs migrations, serves on :8000
+```
+
+In another terminal, seed realistic demo data (learners, instructors, a real match + AI draft already generated) and get login credentials printed to the console:
+
+```bash
+docker compose exec web python manage.py seed_demo_data
+```
+
+### Option B: Local virtualenv (requires a local PostgreSQL)
+
 ```bash
 cd backend
 python -m venv .venv
@@ -190,26 +206,29 @@ python -m venv .venv
 
 pip install -r requirements.txt
 
-# Create the database (adjust user as needed):
-createdb peak_lite_db
-
+createdb peak_lite_db           # create the database (adjust user as needed)
 cp .env.example .env            # then edit DB_* values if needed
 
 python manage.py migrate
-python manage.py createsuperuser
+python manage.py seed_demo_data # or: python manage.py createsuperuser
 python manage.py test core      # run the test suite
 python manage.py runserver
 ```
 
-After creating a superuser, log into `/admin/` to create `Profile` rows (set roles) and seed `Learner`/`Instructor` records, or use the API/shell directly.
+Either way: visit `http://localhost:8000/api/docs/` for interactive, auto-generated API docs (drf-spectacular), or `http://localhost:8000/admin/` to browse data directly.
 
-## 9. Connecting the frontend
+## 9. Continuous integration
+
+`.github/workflows/backend-tests.yml` runs the full test suite against a real PostgreSQL service container on every push/PR that touches `backend/` — the same test command you'd run locally (`python manage.py test core`), not a separate CI-only path.
+
+## 10. Connecting the frontend
 
 - Django is configured with `django-cors-headers`; `CORS_ALLOWED_ORIGINS` (in `.env`) defaults to `http://localhost:3000`, matching the Next.js dev server in `../frontend`.
-- `../frontend/lib/peak-lite-api.ts` is a small client that logs in and calls `POST /api/match-recommendations/` against this backend. It's kept separate from `lib/mock-data.ts`/`lib/matching.ts`, which still power the existing prototype UI with synthetic data — this shows the same screens could be repointed at the real API by swapping the data source, without a rewrite.
+- **`../frontend/app/live/page.tsx`** ("Live Backend" in the nav) is a real, working screen wired to this API end to end: sign in, list learners from Postgres, call `POST /api/match-recommendations/`, render the real response. It's a separate page from the rest of the prototype UI, which still runs on `lib/mock-data.ts`/`lib/matching.ts` — those pages use a richer domain model (learning differences, teaching styles, etc.) that this backend's intentionally-compact schema doesn't cover, so wiring them up would mean either degrading that UI or expanding the backend schema. A new, clearly-labeled page proves the connection works without that trade-off.
+- `../frontend/lib/peak-lite-api.ts` is the client both that page and any future one would use.
 - Copy `frontend/.env.local.example` to `frontend/.env.local` to set `NEXT_PUBLIC_PEAK_LITE_API_URL`.
 
-## 10. Tests
+## 11. Tests
 
 `core/tests.py`, run with `python manage.py test core` (8 tests):
 
@@ -222,11 +241,11 @@ After creating a superuser, log into `/admin/` to create `Profile` rows (set rol
 7. Learner list responses are paginated (`results`/`count` present).
 8. A second `match-recommendations` create within the rate window is throttled (`429`).
 
-## 11. How I would explain this in an interview
+## 12. How I would explain this in an interview
 
 - I started from the workflow, not the schema: a learner needs to be matched with the right instructor, and that match needs a paper trail.
 - I modeled four entities — learners, instructors, match recommendations, learning plans — because each has a different lifecycle and different owners.
 - I used role-based permissions because families, instructors, case managers, and admins should never see or change the same data; that's enforced both at the permission-class level (who can call an endpoint) and the queryset level (which rows they see).
 - I deliberately separated `ai_draft` from `approved_plan` on `LearningPlan`, because for a platform supporting children and neurodivergent learners, AI should assist educators, not make final decisions for them — and that boundary needed to be visible in the schema, not just in application logic.
 - The matching logic is intentionally simple (skill overlap + capacity + availability) and lives in its own module so it's trivial to test, explain, and later replace with something more sophisticated without touching views or permissions.
-- Pagination, scoped rate limiting on login/matching, a strict CORS allow-list, and `DEBUG=False`-gated `SECURE_*` settings are already in (section 7) — the next layer toward production would be JWT auth with refresh tokens instead of static DRF tokens, async processing for real AI calls (Celery/queue instead of a synchronous stub), structured audit logging beyond `reviewed_by`/`approved_by`, and a proper cloud deployment (managed Postgres, environment-based secrets, CI running the test suite).
+- Pagination, scoped rate limiting, a strict CORS allow-list, `DEBUG=False`-gated `SECURE_*` settings, Docker Compose, CI, a seed command, API docs, and one real end-to-end frontend screen are all in already. The next layer toward production would be JWT auth with refresh tokens instead of static DRF tokens, async processing for real AI calls (Celery/queue instead of a synchronous stub), structured audit logging beyond `reviewed_by`/`approved_by`, and a real cloud deployment.

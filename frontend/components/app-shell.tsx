@@ -9,6 +9,7 @@ import {
   GraduationCap,
   Sparkles,
   ClipboardCheck,
+  Radio,
   Menu,
   X,
 } from "lucide-react"
@@ -21,6 +22,7 @@ const navItems = [
   { href: "/instructors", label: "Instructors", icon: GraduationCap },
   { href: "/match", label: "Match Center", icon: Sparkles },
   { href: "/support-plan", label: "Support Plans", icon: ClipboardCheck },
+  { href: "/live", label: "Live Backend", icon: Radio },
 ]
 
 function NavLinks({ onNavigate }: { onNavigate?: () => void }) {

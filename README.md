@@ -20,12 +20,16 @@ Backend includes:
 - `POST /api/match-recommendations/` rule-based matching endpoint
 - `LearningPlan` model separating AI draft from human-approved plan
 - Token auth + CORS so the frontend can call it directly (`frontend/lib/peak-lite-api.ts`)
+- Rate limiting, pagination, and production security settings (see backend README §7)
+- Docker Compose, CI (GitHub Actions), a seeded demo dataset, and auto-generated API docs
 
-Not yet wired up: the frontend's polished UI still runs on mock data (`frontend/lib/mock-data.ts`); it isn't yet re-pointed at the live backend for every screen.
+A real, live-wired screen exists at `frontend/app/live` ("Live Backend" in the nav) — it signs in, lists real learners from Postgres, and calls the real matching endpoint end to end. The rest of the polished prototype UI still runs on mock data (`frontend/lib/mock-data.ts`); those screens use a richer domain model than this backend's intentionally-compact schema covers, so reconciling them is deliberately deferred rather than rushed (see backend README §10 for why).
 
 ## Demo Flow
 
 Dashboard → Match Center → Match Result → Support Plan Review → Edit Draft → Approve Plan
+
+For a live, real-backend demo instead: **Live Backend** in the nav → sign in with seeded demo credentials → pick a learner → run a live match.
 
 ## Tech Stack
 
@@ -47,9 +51,7 @@ Backend (see [backend/README.md](backend/README.md) for full setup):
 
 ```bash
 cd backend
-python -m venv .venv && .venv\Scripts\activate
-pip install -r requirements.txt
 cp .env.example .env
-python manage.py migrate
-python manage.py runserver
+docker compose up                                  # Django + PostgreSQL, one command
+docker compose exec web python manage.py seed_demo_data   # realistic demo data + login creds
 ```

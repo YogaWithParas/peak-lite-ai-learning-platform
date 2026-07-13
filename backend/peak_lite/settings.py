@@ -19,6 +19,7 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "rest_framework",
     "rest_framework.authtoken",
+    "drf_spectacular",
     "corsheaders",
     "core",
 ]
@@ -106,6 +107,14 @@ REST_FRAMEWORK = {
         "login": os.environ.get("LOGIN_THROTTLE_RATE", "5/min"),
         "match_recommendations": os.environ.get("MATCH_THROTTLE_RATE", "20/min"),
     },
+    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+}
+
+SPECTACULAR_SETTINGS = {
+    "TITLE": "PEAK-Lite Backend v2 API",
+    "DESCRIPTION": "Learner-instructor matching and human-approved AI learning plans.",
+    "VERSION": "1.0.0",
+    "SERVE_INCLUDE_SCHEMA": False,
 }
 
 # Production-only hardening. Left off under DEBUG so local http:// dev still works.
