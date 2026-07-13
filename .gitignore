@@ -2,5 +2,7 @@
 node_modules/
 __pycache__/
 venv/
+.venv/
+*.sqlite3
 .next/
 .DS_Store

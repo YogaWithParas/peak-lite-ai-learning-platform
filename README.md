@@ -4,9 +4,9 @@ PEAK-Lite is a frontend prototype for an AI-ready learner-instructor matching pl
 
 ## Current Status
 
-This version is a frontend-only prototype using synthetic mock data.
+The `frontend/` app is a UI prototype using synthetic mock data. `backend/` is a real Django REST Framework + PostgreSQL API ("PEAK-Lite Backend v2") that implements learner-instructor matching and human-approved AI learning plans — see [backend/README.md](backend/README.md) for full details, setup, and interview talking points.
 
-It includes:
+Frontend includes:
 - Learner and instructor profile screens
 - Rule-based matching logic
 - Match score breakdown
@@ -14,11 +14,14 @@ It includes:
 - Support plan draft, edit, and approval flow
 - Accessible navigation and clear workflow states
 
-This version does not include:
-- Backend API
-- Database persistence
-- Authentication
-- Real OpenAI/Claude API integration
+Backend includes:
+- Django REST Framework API backed by PostgreSQL
+- Role-based permissions (admin, case manager, instructor, family)
+- `POST /api/match-recommendations/` rule-based matching endpoint
+- `LearningPlan` model separating AI draft from human-approved plan
+- Token auth + CORS so the frontend can call it directly (`frontend/lib/peak-lite-api.ts`)
+
+Not yet wired up: the frontend's polished UI still runs on mock data (`frontend/lib/mock-data.ts`); it isn't yet re-pointed at the live backend for every screen.
 
 ## Demo Flow
 
@@ -26,25 +29,27 @@ Dashboard → Match Center → Match Result → Support Plan Review → Edit Dra
 
 ## Tech Stack
 
-- Next.js
-- React
-- TypeScript
-- Tailwind CSS
-- Mock data
+- Next.js, React, TypeScript, Tailwind CSS (frontend)
+- Django, Django REST Framework, PostgreSQL (backend)
 - Git/GitHub
 
-## Future Architecture
-
-The frontend is designed to connect later with:
-- Django REST Framework
-- PostgreSQL
-- AI-assisted recommendation workflows
-- Instructor/learner management APIs
-- Persistent support plan drafts and approvals
-
 ## Run Locally
+
+Frontend:
 
 ```bash
 cd frontend
 npm install
 npm run dev
+```
+
+Backend (see [backend/README.md](backend/README.md) for full setup):
+
+```bash
+cd backend
+python -m venv .venv && .venv\Scripts\activate
+pip install -r requirements.txt
+cp .env.example .env
+python manage.py migrate
+python manage.py runserver
+```
