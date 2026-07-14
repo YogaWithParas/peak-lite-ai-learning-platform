@@ -94,3 +94,89 @@ export async function listLearners(): Promise<ApiLearner[]> {
   const page = await request<PaginatedResponse<ApiLearner>>("/api/learners/")
   return page.results
 }
+
+export interface Me {
+  username: string
+  role: "admin" | "case_manager" | "instructor" | "family" | null
+}
+
+export async function getMe(): Promise<Me> {
+  return request<Me>("/api/auth/me/")
+}
+
+// Full detail shape returned by GET/approve/reject on a single match recommendation
+// (POST /api/match-recommendations/ itself returns the more compact ApiMatchRecommendation).
+export interface ApiMatchRecommendationDetail {
+  id: number
+  learner: number
+  learner_name: string
+  instructor: number
+  instructor_name: string
+  score: number
+  reason: string
+  status: "pending" | "approved" | "rejected"
+  created_by: number | null
+  reviewed_by: number | null
+  reviewed_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export async function listMatchRecommendations(): Promise<ApiMatchRecommendationDetail[]> {
+  const page = await request<PaginatedResponse<ApiMatchRecommendationDetail>>("/api/match-recommendations/")
+  return page.results
+}
+
+export async function approveMatchRecommendation(id: number): Promise<ApiMatchRecommendationDetail> {
+  return request<ApiMatchRecommendationDetail>(`/api/match-recommendations/${id}/approve/`, {
+    method: "POST",
+  })
+}
+
+export async function rejectMatchRecommendation(id: number): Promise<ApiMatchRecommendationDetail> {
+  return request<ApiMatchRecommendationDetail>(`/api/match-recommendations/${id}/reject/`, {
+    method: "POST",
+  })
+}
+
+export interface ApiLearningPlan {
+  id: number
+  learner: number
+  learner_name: string
+  ai_draft: string
+  approved_plan: string | null
+  status: "draft" | "approved" | "rejected"
+  created_by: number | null
+  approved_by: number | null
+  approved_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export async function listLearningPlans(): Promise<ApiLearningPlan[]> {
+  const page = await request<PaginatedResponse<ApiLearningPlan>>("/api/learning-plans/")
+  return page.results
+}
+
+// AI drafts the plan server-side (core/ai.py) -- nothing is ever sent as "final" here.
+export async function createLearningPlan(learnerId: number): Promise<ApiLearningPlan> {
+  return request<ApiLearningPlan>("/api/learning-plans/", {
+    method: "POST",
+    body: JSON.stringify({ learner_id: learnerId }),
+  })
+}
+
+// The human can edit the draft before approving -- approvedPlan defaults to the
+// AI draft server-side if omitted, but the UI always sends the (possibly edited) text.
+export async function approveLearningPlan(id: number, approvedPlan: string): Promise<ApiLearningPlan> {
+  return request<ApiLearningPlan>(`/api/learning-plans/${id}/approve/`, {
+    method: "POST",
+    body: JSON.stringify({ approved_plan: approvedPlan }),
+  })
+}
+
+export async function rejectLearningPlan(id: number): Promise<ApiLearningPlan> {
+  return request<ApiLearningPlan>(`/api/learning-plans/${id}/reject/`, {
+    method: "POST",
+  })
+}

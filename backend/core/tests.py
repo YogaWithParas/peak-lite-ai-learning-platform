@@ -84,6 +84,24 @@ class MatchRecommendationTests(BaseSetup):
         instructor_names = [r["instructor"] for r in response.data["recommendations"]]
         self.assertNotIn("Sam Rivera", instructor_names)  # capacity is 0
 
+    def test_case_manager_can_approve_match_recommendation(self):
+        recommendation = MatchRecommendation.objects.create(
+            learner=self.learner,
+            instructor=self.instructor,
+            score=85,
+            reason="test",
+            created_by=self.case_manager,
+        )
+
+        self.client.force_authenticate(self.case_manager)
+        response = self.client.post(f"/api/match-recommendations/{recommendation.id}/approve/", {}, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        recommendation.refresh_from_db()
+        self.assertEqual(recommendation.status, MatchRecommendation.STATUS_APPROVED)
+        self.assertEqual(recommendation.reviewed_by, self.case_manager)
+        self.assertIsNotNone(recommendation.reviewed_at)
+
     def test_instructor_can_only_view_their_own_recommendations(self):
         own_recommendation = MatchRecommendation.objects.create(
             learner=self.learner,
@@ -120,6 +138,17 @@ class LearningPlanTests(BaseSetup):
             created_by=self.case_manager,
         )
 
+    def test_case_manager_can_create_learning_plan(self):
+        self.client.force_authenticate(self.case_manager)
+        response = self.client.post(
+            "/api/learning-plans/", {"learner_id": self.learner.id}, format="json"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["status"], "draft")
+        self.assertTrue(response.data["ai_draft"])  # a stub draft was generated
+        self.assertIsNone(response.data["approved_plan"])
+
     def test_case_manager_can_approve_learning_plan(self):
         self.client.force_authenticate(self.case_manager)
         response = self.client.post(f"/api/learning-plans/{self.plan.id}/approve/", {}, format="json")
@@ -138,6 +167,20 @@ class LearningPlanTests(BaseSetup):
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
         self.plan.refresh_from_db()
         self.assertEqual(self.plan.status, LearningPlan.STATUS_DRAFT)
+
+
+class MeEndpointTests(BaseSetup):
+    def test_me_returns_username_and_role(self):
+        self.client.force_authenticate(self.instructor_user)
+        response = self.client.get("/api/auth/me/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["username"], "instr1")
+        self.assertEqual(response.data["role"], Profile.ROLE_INSTRUCTOR)
+
+    def test_me_requires_authentication(self):
+        response = self.client.get("/api/auth/me/")
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
 
 class HardeningTests(BaseSetup):

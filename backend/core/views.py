@@ -5,6 +5,7 @@ from rest_framework.authtoken.views import ObtainAuthToken
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
+from rest_framework.views import APIView
 
 from .ai import generate_ai_draft_stub
 from .matching import find_suitable_instructors
@@ -24,6 +25,16 @@ class ThrottledObtainAuthToken(ObtainAuthToken):
 
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = "login"
+
+
+class MeView(APIView):
+    """Tells the frontend who's logged in and what role they have, so the
+    UI can render the right panel without guessing from response shapes."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        return Response({"username": request.user.username, "role": get_role(request.user)})
 
 
 class LearnerViewSet(viewsets.ModelViewSet):
