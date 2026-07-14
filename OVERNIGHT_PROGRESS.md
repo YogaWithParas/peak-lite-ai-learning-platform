@@ -6,7 +6,7 @@ Guardrails: local commits only, no push, no destructive ops, tests gate every se
 ## Status
 
 - [x] Session 1: Complete the core case_manager/admin workflow (approve match, draft plan, approve/reject plan) + `/api/auth/me/` endpoint
-- [ ] Session 2: Role-aware `/live` views (instructor, family)
+- [x] Session 2: Role-aware `/live` views (instructor, family)
 - [ ] Session 3: Polish (friendlier 403s, Select-bug check, Docker stability re-check)
 - [ ] Session 4: Rehearsal (not building — timed run-through + narration notes)
 
@@ -36,3 +36,17 @@ Full flow driven for real against the Docker/Postgres backend as `casemanager_de
 7. **Verified directly against the database** (`docker compose exec web python manage.py shell`): `LearningPlan.approved_plan` contains the edited text exactly, `approved_by` is `casemanager_demo`; `MatchRecommendation.status` is `approved`, `reviewed_by` is `casemanager_demo`. Confirms the UI isn't just updating local state — it's the real, persisted record.
 
 This is the core "AI drafts, human decides" workflow, fully working and proven end to end for the first time.
+
+### Session 2 — role-aware views (instructor + family)
+- `frontend/app/live/page.tsx` now branches on `me.role` after login: `instructor`/`family` render a new read-only card (`"My Assigned Learners"` for instructor, `"My Learner"` for family); `admin`/`case_manager` keep Session 1's create/approve workflow unchanged.
+- Read-only card shows, per learner already scoped correctly by the backend's existing row-level filtering: their match(es) with instructor name + status badge, and their learning plan -- the approved text if approved, "Pending review" if drafted but not yet approved, "No plan drafted yet" if none exists. No action buttons in this view (intentionally read-only).
+- Added `listMatchRecommendations` / `listLearningPlans` calls, fetched only for instructor/family (case_manager/admin don't need the extra requests).
+- No backend changes this session -- pure frontend branching on data the API already scoped correctly. `npm run build` compiles clean.
+- **Live-verified all 4 seeded logins in the browser** (same JS-dispatch workaround as Session 1, since the screenshot/coordinate tool issue persisted):
+  - `jordan_lee` (instructor) → "My Assigned Learners", Alex Chen, 3 match rows (accumulated from repeated testing tonight, not a bug) with correct statuses, and the real approved plan text from Session 1's edit.
+  - `family_chen` (family) → "My Learner", same Alex Chen data, correctly titled differently from the instructor view.
+  - `admin_demo` (admin) → correctly got the full case_manager-style workflow view (learner picker + Run live match), not the read-only one.
+  - `casemanager_demo` already confirmed in Session 1.
+- Committed locally.
+
+**All 4 roles now have a real, distinct, demonstrable workflow on `/live`.** This directly closes the gap identified earlier tonight.

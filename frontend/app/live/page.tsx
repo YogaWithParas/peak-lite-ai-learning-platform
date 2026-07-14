@@ -20,6 +20,7 @@ import {
   type ApiLearner,
   type ApiLearningPlan,
   type ApiMatchRecommendation,
+  type ApiMatchRecommendationDetail,
   type Me,
   approveLearningPlan,
   approveMatchRecommendation,
@@ -28,6 +29,8 @@ import {
   getMe,
   getStoredToken,
   listLearners,
+  listLearningPlans,
+  listMatchRecommendations,
   login,
   logout,
   rejectLearningPlan,
@@ -47,6 +50,12 @@ export default function LiveBackendPage() {
   const [me, setMe] = useState<Me | null>(null)
 
   const [learnersList, setLearnersList] = useState<ApiLearner[]>([])
+
+  // Read-only data for instructor/family roles -- see loadForRole().
+  const [myMatches, setMyMatches] = useState<ApiMatchRecommendationDetail[]>([])
+  const [myPlans, setMyPlans] = useState<ApiLearningPlan[]>([])
+
+  // Case-manager/admin match+plan workflow state.
   const [learnerId, setLearnerId] = useState("")
   const [running, setRunning] = useState(false)
   const [matchError, setMatchError] = useState<string | null>(null)
@@ -61,30 +70,34 @@ export default function LiveBackendPage() {
 
   useEffect(() => {
     if (getStoredToken()) {
-      loadLearners()
+      loadForRole()
     } else {
       setStatus("signed-out")
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  async function loadLearners() {
+  // Fetches whoever is signed in, then loads exactly the data their role
+  // needs -- instructor/family get a read-only picture of their own
+  // matches + plans, case_manager/admin get the learner picker for the
+  // create-a-match workflow below.
+  async function loadForRole() {
     try {
-      const [data] = await Promise.all([listLearners(), loadMe()])
+      const meResult = await getMe()
+      setMe(meResult)
+      const data = await listLearners()
       setLearnersList(data)
+
+      if (meResult.role === "instructor" || meResult.role === "family") {
+        const [matchData, planData] = await Promise.all([listMatchRecommendations(), listLearningPlans()])
+        setMyMatches(matchData)
+        setMyPlans(planData)
+      }
       setStatus("signed-in")
     } catch (err) {
       // Either the stored token is stale, or the backend isn't running.
       logout()
       setStatus(err instanceof TypeError ? "unreachable" : "signed-out")
-    }
-  }
-
-  async function loadMe() {
-    try {
-      setMe(await getMe())
-    } catch {
-      // Non-critical -- the page still works without the role label.
     }
   }
 
@@ -94,7 +107,7 @@ export default function LiveBackendPage() {
     setAuthError(null)
     try {
       await login(username, password)
-      await loadLearners()
+      await loadForRole()
     } catch (err) {
       if (err instanceof TypeError) {
         setStatus("unreachable")
@@ -203,11 +216,19 @@ export default function LiveBackendPage() {
   function handleSignOut() {
     logout()
     setLearnersList([])
+    setMyMatches([])
+    setMyPlans([])
     setResultLearnerName(null)
     setRecommendations([])
     setPlan(null)
     setMe(null)
     setStatus("signed-out")
+  }
+
+  const isReadOnlyRole = me?.role === "instructor" || me?.role === "family"
+
+  function matchStatusVariant(s: string) {
+    return s === "approved" ? "default" : s === "rejected" ? "destructive" : "outline"
   }
 
   return (
@@ -274,10 +295,82 @@ export default function LiveBackendPage() {
                 {signingIn ? "Signing in…" : "Sign in"}
               </Button>
               <p className="text-xs leading-relaxed text-muted-foreground">
-                Seeded demo login: <code>casemanager_demo</code> /{" "}
-                <code>peaklite-demo-2026</code>
+                Seeded demo logins (same password <code>peaklite-demo-2026</code> for all):{" "}
+                <code>casemanager_demo</code>, <code>jordan_lee</code> (instructor),{" "}
+                <code>family_chen</code> (family)
               </p>
             </form>
+          </CardContent>
+        </Card>
+      ) : isReadOnlyRole ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>{me?.role === "instructor" ? "My Assigned Learners" : "My Learner"}</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-4">
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              Read-only —{" "}
+              {me?.role === "instructor"
+                ? "learners you're currently matched with, and their plan status."
+                : "your learner's match and learning plan status."}{" "}
+              Creating or approving matches and plans is restricted to case managers and admins.
+            </p>
+
+            {learnersList.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                No learners linked to your account yet.
+              </p>
+            ) : (
+              <ul className="flex flex-col gap-4">
+                {learnersList.map((l) => {
+                  const learnerMatches = myMatches.filter((m) => m.learner === l.id)
+                  const learnerPlan = myPlans.find((p) => p.learner === l.id)
+                  return (
+                    <li key={l.id} className="rounded-lg border border-border bg-card p-4">
+                      <div className="flex items-center justify-between">
+                        <span className="font-medium text-foreground">{l.full_name}</span>
+                        <span className="text-xs text-muted-foreground">{l.grade_level}</span>
+                      </div>
+
+                      {learnerMatches.length === 0 ? (
+                        <p className="mt-2 text-sm text-muted-foreground">
+                          No match recommendation yet.
+                        </p>
+                      ) : (
+                        <ul className="mt-2 flex flex-col gap-1.5">
+                          {learnerMatches.map((m) => (
+                            <li key={m.id} className="flex items-center justify-between text-sm">
+                              <span className="text-muted-foreground">
+                                Matched with{" "}
+                                <span className="text-foreground">{m.instructor_name}</span>
+                              </span>
+                              <Badge variant={matchStatusVariant(m.status)}>{m.status}</Badge>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+
+                      <div className="mt-3 border-t border-border pt-3">
+                        <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                          Learning plan
+                        </span>
+                        {!learnerPlan ? (
+                          <p className="mt-1 text-sm text-muted-foreground">No plan drafted yet.</p>
+                        ) : learnerPlan.status === "approved" ? (
+                          <p className="mt-1 text-sm leading-relaxed text-foreground">
+                            {learnerPlan.approved_plan}
+                          </p>
+                        ) : (
+                          <p className="mt-1 text-sm italic text-muted-foreground">
+                            Pending review — not yet approved by a case manager.
+                          </p>
+                        )}
+                      </div>
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
           </CardContent>
         </Card>
       ) : (
@@ -358,17 +451,7 @@ export default function LiveBackendPage() {
                               {r.reason}
                             </p>
                             <div className="mt-2 flex items-center gap-2">
-                              <Badge
-                                variant={
-                                  r.status === "approved"
-                                    ? "default"
-                                    : r.status === "rejected"
-                                      ? "destructive"
-                                      : "outline"
-                                }
-                              >
-                                {r.status}
-                              </Badge>
+                              <Badge variant={matchStatusVariant(r.status)}>{r.status}</Badge>
                               {r.status === "pending" && (
                                 <div className="ml-auto flex gap-2">
                                   <Button
@@ -421,17 +504,7 @@ export default function LiveBackendPage() {
                 ) : (
                   <div className="flex flex-col gap-3">
                     <div className="flex items-center gap-2">
-                      <Badge
-                        variant={
-                          plan.status === "approved"
-                            ? "default"
-                            : plan.status === "rejected"
-                              ? "destructive"
-                              : "outline"
-                        }
-                      >
-                        {plan.status}
-                      </Badge>
+                      <Badge variant={matchStatusVariant(plan.status)}>{plan.status}</Badge>
                       {plan.status === "approved" && plan.approved_at && (
                         <span className="text-xs text-muted-foreground">
                           Approved {new Date(plan.approved_at).toLocaleString()}
