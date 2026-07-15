@@ -29,7 +29,7 @@ export function FilterSelect({
       <Label htmlFor={id} className="text-xs font-medium text-muted-foreground">
         {label}
       </Label>
-      <Select value={value} onValueChange={onValueChange}>
+      <Select value={value} onValueChange={(v) => v !== null && onValueChange(v)}>
         <SelectTrigger id={id} className="w-full bg-card">
           <SelectValue />
         </SelectTrigger>

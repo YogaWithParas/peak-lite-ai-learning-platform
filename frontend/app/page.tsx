@@ -77,9 +77,12 @@ export default function HomePage() {
     if (getStoredToken()) {
       void loadEverything()
     } else {
+      // Initial state must stay "checking" on both server and client (SSR-safe,
+      // avoids a hydration mismatch) -- this mount-only effect is the one place
+      // that's allowed to branch on localStorage and settle it to "signed-out".
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setStatus("signed-out")
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   async function loadEverything() {
