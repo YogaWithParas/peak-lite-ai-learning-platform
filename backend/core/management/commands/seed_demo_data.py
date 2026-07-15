@@ -7,6 +7,34 @@ from core.models import Instructor, Learner, LearningPlan, MatchRecommendation, 
 
 DEMO_PASSWORD = "peaklite-demo-2026"
 
+# Shared vocabulary so the bulk-generated learners/instructors below actually
+# overlap with each other -- real candidates for matching, not just noise.
+NEEDS_SKILLS_VOCAB = [
+    "dyslexia", "adhd", "focus", "organization",
+    "number_sense", "working_memory", "reading_fluency",
+    "executive_function", "sensory_processing", "written_expression",
+]
+AVAILABILITY_VOCAB = ["mornings", "afternoons", "evenings", "weekends"]
+GRADE_LEVELS = ["K-2", "3-5", "6-8", "9-12"]
+
+# 27 more learners (on top of the 3 named ones below) to reach ~30 total.
+EXTRA_LEARNERS = [
+    "Noah Kim", "Emma Johnson", "Liam Patel", "Olivia Garcia", "Ethan Brooks",
+    "Ava Thompson", "Mason Nguyen", "Sophia Rodriguez", "Lucas Martinez", "Isabella Wright",
+    "James Okafor", "Mia Sullivan", "Benjamin Cohen", "Charlotte Diaz", "Elijah Novak",
+    "Amelia Fischer", "Henry Alvarez", "Harper Singh", "Daniel Osei", "Grace Delgado",
+    "Samuel Reyes", "Victoria Haddad", "Jack Whitfield", "Zoe Meyer", "Leo Petrov",
+    "Nora Castillo", "Owen Baptiste",
+]
+
+# 17 more instructors (on top of the 3 named ones below) to reach ~20 total.
+EXTRA_INSTRUCTORS = [
+    "Maria Chen", "Tomas Rivera", "Grace Kim", "David Osei", "Priya Patel",
+    "Marcus Yu", "Elena Ruiz", "Samuel Whitfield", "Nadia Hassan", "Connor Blake",
+    "Aisha Rahman", "Felix Nakamura", "Sofia Marchetti", "Derek Coleman",
+    "Ingrid Larsen", "Malik Johnson", "Renata Alves",
+]
+
 
 class Command(BaseCommand):
     help = "Seed realistic demo learners, instructors, and one full match + AI-draft cycle."
@@ -84,6 +112,9 @@ class Command(BaseCommand):
             ),
         )
 
+        self._seed_bulk_learners()
+        self._seed_bulk_instructors()
+
         # Exercise the real matching + AI-draft logic for one learner, so the
         # seed data isn't static rows -- it proves the actual business logic
         # (core/matching.py, core/ai.py) runs end to end.
@@ -112,7 +143,48 @@ class Command(BaseCommand):
             ("family", "family_chen"),
         ]:
             self.stdout.write(f"  {label:<13} {username} / {DEMO_PASSWORD}")
-        self.stdout.write("")
+        self.stdout.write(
+            f"\n{Learner.objects.count()} learners, {Instructor.objects.count()} instructors total.\n"
+        )
+
+    def _seed_bulk_learners(self):
+        """Plain data rows for volume/realism -- no login account, unlike the 3 named learners above."""
+        for i, name in enumerate(EXTRA_LEARNERS):
+            Learner.objects.get_or_create(
+                full_name=name,
+                defaults=dict(
+                    grade_level=GRADE_LEVELS[i % len(GRADE_LEVELS)],
+                    learning_needs=[
+                        NEEDS_SKILLS_VOCAB[i % len(NEEDS_SKILLS_VOCAB)],
+                        NEEDS_SKILLS_VOCAB[(i + 3) % len(NEEDS_SKILLS_VOCAB)],
+                    ],
+                    availability=[AVAILABILITY_VOCAB[i % len(AVAILABILITY_VOCAB)]],
+                ),
+            )
+
+    def _seed_bulk_instructors(self):
+        """Every Instructor needs a User (required OneToOneField), so each still gets an
+        account -- but only the 4 named demo accounts are ever surfaced in the login UI."""
+        for i, name in enumerate(EXTRA_INSTRUCTORS):
+            username = name.lower().replace(" ", "_")
+            user = self._user(username, Profile.ROLE_INSTRUCTOR)
+            Instructor.objects.get_or_create(
+                user=user,
+                defaults=dict(
+                    full_name=name,
+                    skills=[
+                        NEEDS_SKILLS_VOCAB[i % len(NEEDS_SKILLS_VOCAB)],
+                        NEEDS_SKILLS_VOCAB[(i + 3) % len(NEEDS_SKILLS_VOCAB)],
+                    ],
+                    availability=[
+                        AVAILABILITY_VOCAB[i % len(AVAILABILITY_VOCAB)],
+                        AVAILABILITY_VOCAB[(i + 1) % len(AVAILABILITY_VOCAB)],
+                    ],
+                    # Mostly 1-5 open slots; a couple at 0 for realistic full caseloads.
+                    capacity=0 if i % 7 == 6 else (i % 5) + 1,
+                    active=True,
+                ),
+            )
 
     def _user(self, username, role, is_staff=False, is_superuser=False):
         user, created = User.objects.get_or_create(

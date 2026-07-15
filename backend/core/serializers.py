@@ -1,7 +1,17 @@
 from django.contrib.auth.models import User
 from rest_framework import serializers
 
+from .matching import score_breakdown as compute_score_breakdown
 from .models import Instructor, Learner, LearningPlan, MatchRecommendation, Profile
+
+
+def _score_breakdown_payload(match_recommendation):
+    breakdown = compute_score_breakdown(match_recommendation.learner, match_recommendation.instructor)
+    return {
+        "skill_score": breakdown["skill_score"],
+        "availability_score": breakdown["availability_score"],
+        "capacity_score": breakdown["capacity_score"],
+    }
 
 
 class UserMiniSerializer(serializers.ModelSerializer):
@@ -48,6 +58,7 @@ class InstructorSerializer(serializers.ModelSerializer):
 class MatchRecommendationSerializer(serializers.ModelSerializer):
     learner_name = serializers.CharField(source="learner.full_name", read_only=True)
     instructor_name = serializers.CharField(source="instructor.full_name", read_only=True)
+    score_breakdown = serializers.SerializerMethodField()
 
     class Meta:
         model = MatchRecommendation
@@ -58,6 +69,7 @@ class MatchRecommendationSerializer(serializers.ModelSerializer):
             "instructor",
             "instructor_name",
             "score",
+            "score_breakdown",
             "reason",
             "status",
             "created_by",
@@ -77,15 +89,22 @@ class MatchRecommendationSerializer(serializers.ModelSerializer):
             "updated_at",
         ]
 
+    def get_score_breakdown(self, obj):
+        return _score_breakdown_payload(obj)
+
 
 class MatchRecommendationResultSerializer(serializers.ModelSerializer):
     """Compact shape used in the POST /api/match-recommendations/ response."""
 
     instructor = serializers.CharField(source="instructor.full_name", read_only=True)
+    score_breakdown = serializers.SerializerMethodField()
 
     class Meta:
         model = MatchRecommendation
-        fields = ["id", "instructor", "score", "reason", "status"]
+        fields = ["id", "instructor", "score", "score_breakdown", "reason", "status"]
+
+    def get_score_breakdown(self, obj):
+        return _score_breakdown_payload(obj)
 
 
 class LearningPlanSerializer(serializers.ModelSerializer):

@@ -66,6 +66,22 @@ class MatchRecommendationTests(BaseSetup):
         self.assertEqual(response.data["recommendations"][0]["instructor"], "Jordan Lee")
         self.assertEqual(response.data["recommendations"][0]["status"], "pending")
 
+    def test_match_recommendation_score_breakdown_is_real_and_sums_to_score(self):
+        self.client.force_authenticate(self.case_manager)
+        response = self.client.post(
+            "/api/match-recommendations/", {"learner_id": self.learner.id}, format="json"
+        )
+
+        result = response.data["recommendations"][0]
+        breakdown = result["score_breakdown"]
+        # Alex Chen needs {dyslexia, adhd}; Jordan Lee shares both (skill_score = 60/60),
+        # shares the "mornings" slot (availability_score = 20/20), capacity=3 (capacity_score = 12/20).
+        self.assertEqual(breakdown, {"skill_score": 60, "availability_score": 20, "capacity_score": 12})
+        self.assertEqual(
+            breakdown["skill_score"] + breakdown["availability_score"] + breakdown["capacity_score"],
+            result["score"],
+        )
+
     def test_instructor_cannot_create_match_recommendations(self):
         self.client.force_authenticate(self.instructor_user)
         response = self.client.post(
@@ -181,6 +197,23 @@ class MeEndpointTests(BaseSetup):
     def test_me_requires_authentication(self):
         response = self.client.get("/api/auth/me/")
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+
+class AccountsEndpointTests(BaseSetup):
+    def test_admin_can_list_accounts(self):
+        self.client.force_authenticate(self.admin_user)
+        response = self.client.get("/api/accounts/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        usernames = [a["username"] for a in response.data]
+        self.assertIn("cm1", usernames)
+        self.assertIn("instr1", usernames)
+
+    def test_case_manager_cannot_list_accounts(self):
+        self.client.force_authenticate(self.case_manager)
+        response = self.client.get("/api/accounts/")
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
 
 class HardeningTests(BaseSetup):

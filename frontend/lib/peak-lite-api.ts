@@ -50,10 +50,17 @@ export async function login(username: string, password: string): Promise<string>
   return token
 }
 
+export interface ScoreBreakdown {
+  skill_score: number
+  availability_score: number
+  capacity_score: number
+}
+
 export interface ApiMatchRecommendation {
   id: number
   instructor: string
   score: number
+  score_breakdown: ScoreBreakdown
   reason: string
   status: "pending" | "approved" | "rejected"
 }
@@ -90,9 +97,46 @@ export interface PaginatedResponse<T> {
   results: T[]
 }
 
+// Follows `next` until every page is collected, so callers never silently see
+// only the first 20 rows of a larger table (e.g. 30 learners, 20 instructors).
+async function requestAllPages<T>(path: string): Promise<T[]> {
+  const results: T[] = []
+  let next: string | null = path
+  while (next) {
+    const page: PaginatedResponse<T> = await request<PaginatedResponse<T>>(next)
+    results.push(...page.results)
+    next = page.next ? page.next.replace(API_URL, "") : null
+  }
+  return results
+}
+
 export async function listLearners(): Promise<ApiLearner[]> {
-  const page = await request<PaginatedResponse<ApiLearner>>("/api/learners/")
-  return page.results
+  return requestAllPages<ApiLearner>("/api/learners/")
+}
+
+export interface ApiInstructor {
+  id: number
+  user: number
+  full_name: string
+  skills: string[]
+  availability: string[]
+  capacity: number
+  active: boolean
+}
+
+export async function listInstructors(): Promise<ApiInstructor[]> {
+  return requestAllPages<ApiInstructor>("/api/instructors/")
+}
+
+export interface ApiAccount {
+  id: number
+  username: string
+  role: "admin" | "case_manager" | "instructor" | "family" | null
+}
+
+// Admin only -- powers the admin dashboard's accounts table.
+export async function listAccounts(): Promise<ApiAccount[]> {
+  return request<ApiAccount[]>("/api/accounts/")
 }
 
 export interface Me {
@@ -113,6 +157,7 @@ export interface ApiMatchRecommendationDetail {
   instructor: number
   instructor_name: string
   score: number
+  score_breakdown: ScoreBreakdown
   reason: string
   status: "pending" | "approved" | "rejected"
   created_by: number | null
@@ -123,8 +168,7 @@ export interface ApiMatchRecommendationDetail {
 }
 
 export async function listMatchRecommendations(): Promise<ApiMatchRecommendationDetail[]> {
-  const page = await request<PaginatedResponse<ApiMatchRecommendationDetail>>("/api/match-recommendations/")
-  return page.results
+  return requestAllPages<ApiMatchRecommendationDetail>("/api/match-recommendations/")
 }
 
 export async function approveMatchRecommendation(id: number): Promise<ApiMatchRecommendationDetail> {
@@ -154,8 +198,7 @@ export interface ApiLearningPlan {
 }
 
 export async function listLearningPlans(): Promise<ApiLearningPlan[]> {
-  const page = await request<PaginatedResponse<ApiLearningPlan>>("/api/learning-plans/")
-  return page.results
+  return requestAllPages<ApiLearningPlan>("/api/learning-plans/")
 }
 
 // AI drafts the plan server-side (core/ai.py) -- nothing is ever sent as "final" here.

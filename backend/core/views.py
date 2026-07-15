@@ -1,3 +1,4 @@
+from django.contrib.auth.models import User
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import permissions, viewsets
@@ -10,13 +11,14 @@ from rest_framework.views import APIView
 from .ai import generate_ai_draft_stub
 from .matching import find_suitable_instructors
 from .models import Instructor, Learner, LearningPlan, MatchRecommendation, Profile, get_role
-from .permissions import IsAdminOrCaseManager
+from .permissions import IsAdmin, IsAdminOrCaseManager
 from .serializers import (
     InstructorSerializer,
     LearnerSerializer,
     LearningPlanSerializer,
     MatchRecommendationResultSerializer,
     MatchRecommendationSerializer,
+    UserMiniSerializer,
 )
 
 
@@ -35,6 +37,16 @@ class MeView(APIView):
 
     def get(self, request):
         return Response({"username": request.user.username, "role": get_role(request.user)})
+
+
+class AccountsView(APIView):
+    """Admin-only: every user with a PEAK-Lite role, for the admin dashboard's accounts table."""
+
+    permission_classes = [IsAdmin]
+
+    def get(self, request):
+        users = User.objects.filter(profile__isnull=False).select_related("profile").order_by("username")
+        return Response(UserMiniSerializer(users, many=True).data)
 
 
 class LearnerViewSet(viewsets.ModelViewSet):

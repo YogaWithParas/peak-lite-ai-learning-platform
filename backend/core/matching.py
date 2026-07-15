@@ -6,11 +6,41 @@ from views/serializers so it's easy to test and reason about on its own.
 
 from .models import Instructor
 
-BASE_SCORE = 40
-POINTS_PER_SHARED_SKILL = 20
-POINTS_PER_SHARED_AVAILABILITY = 5
-MAX_SCORE = 100
+MAX_SKILL_SCORE = 60
+MAX_AVAILABILITY_SCORE = 20
+MAX_CAPACITY_SCORE = 20
+CAPACITY_SCORE_PER_SLOT = 4
 DEFAULT_RESULT_LIMIT = 3
+
+
+def score_breakdown(learner, instructor):
+    """Return the 3 real, explainable sub-scores for a learner/instructor pair.
+
+    Each sub-score is derived entirely from fields that actually exist on the
+    models (learning_needs/skills/availability/capacity) -- no invented
+    criteria. It's a pure function of current data, so callers recompute it
+    on demand (e.g. a serializer method field) rather than storing it.
+    """
+    needs = set(learner.learning_needs or [])
+    learner_availability = set(learner.availability or [])
+    shared_skills = needs & set(instructor.skills or [])
+    shared_availability = learner_availability & set(instructor.availability or [])
+
+    skill_score = round(MAX_SKILL_SCORE * len(shared_skills) / len(needs)) if needs else 0
+    availability_score = (
+        round(MAX_AVAILABILITY_SCORE * len(shared_availability) / len(learner_availability))
+        if learner_availability
+        else 0
+    )
+    capacity_score = min(MAX_CAPACITY_SCORE, instructor.capacity * CAPACITY_SCORE_PER_SLOT)
+
+    return {
+        "skill_score": skill_score,
+        "availability_score": availability_score,
+        "capacity_score": capacity_score,
+        "shared_skills": shared_skills,
+        "shared_availability": shared_availability,
+    }
 
 
 def find_suitable_instructors(learner, limit=DEFAULT_RESULT_LIMIT):
@@ -20,25 +50,17 @@ def find_suitable_instructors(learner, limit=DEFAULT_RESULT_LIMIT):
     - instructor must be active
     - instructor must have capacity > 0
     - instructor skills must overlap with the learner's learning_needs
-    - shared availability slots add a small bonus to the score
     """
-    needs = set(learner.learning_needs or [])
     results = []
 
     candidates = Instructor.objects.filter(active=True, capacity__gt=0)
     for instructor in candidates:
-        shared_skills = needs & set(instructor.skills or [])
-        if not shared_skills:
+        breakdown = score_breakdown(learner, instructor)
+        if not breakdown["shared_skills"]:
             continue
 
-        shared_availability = set(learner.availability or []) & set(instructor.availability or [])
-        score = min(
-            BASE_SCORE
-            + len(shared_skills) * POINTS_PER_SHARED_SKILL
-            + len(shared_availability) * POINTS_PER_SHARED_AVAILABILITY,
-            MAX_SCORE,
-        )
-        reason = _build_reason(shared_skills, shared_availability, instructor.capacity)
+        score = breakdown["skill_score"] + breakdown["availability_score"] + breakdown["capacity_score"]
+        reason = _build_reason(breakdown["shared_skills"], breakdown["shared_availability"], instructor.capacity)
         results.append((instructor, score, reason))
 
     results.sort(key=lambda item: item[1], reverse=True)
