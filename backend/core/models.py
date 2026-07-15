@@ -45,6 +45,9 @@ class Learner(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    class Meta:
+        ordering = ["full_name"]
+
     def __str__(self):
         return self.full_name
 
@@ -58,6 +61,9 @@ class Instructor(models.Model):
     active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["full_name"]
 
     def __str__(self):
         return self.full_name
@@ -119,6 +125,9 @@ class LearningPlan(models.Model):
     approved_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
 
     def __str__(self):
         return f"Learning plan for {self.learner.full_name} ({self.status})"

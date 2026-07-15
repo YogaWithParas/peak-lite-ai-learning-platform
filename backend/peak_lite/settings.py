@@ -19,6 +19,7 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "rest_framework",
     "rest_framework.authtoken",
+    "drf_spectacular",
     "corsheaders",
     "core",
 ]
@@ -80,10 +81,14 @@ USE_TZ = True
 STATIC_URL = "static/"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-# CORS: allow the Next.js frontend (running locally) to call this API.
-CORS_ALLOWED_ORIGINS = os.environ.get(
-    "CORS_ALLOWED_ORIGINS", "http://localhost:3000"
-).split(",")
+# CORS: allow only explicitly listed origins (the Next.js frontend), never a wildcard.
+# Token auth is header-based, not cookie-based, so cross-origin credentials aren't needed.
+CORS_ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in os.environ.get("CORS_ALLOWED_ORIGINS", "http://localhost:3000").split(",")
+    if origin.strip()
+]
+CORS_ALLOW_CREDENTIALS = False
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
@@ -93,4 +98,38 @@ REST_FRAMEWORK = {
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.IsAuthenticated",
     ],
+    # List endpoints return {count, next, previous, results} instead of a bare array.
+    "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
+    "PAGE_SIZE": 20,
+    # No DEFAULT_THROTTLE_CLASSES on purpose: throttling is opted into per-view
+    # (login, match-recommendations) rather than applied blanket across the API.
+    "DEFAULT_THROTTLE_RATES": {
+        "login": os.environ.get("LOGIN_THROTTLE_RATE", "5/min"),
+        "match_recommendations": os.environ.get("MATCH_THROTTLE_RATE", "20/min"),
+    },
+    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
 }
+
+SPECTACULAR_SETTINGS = {
+    "TITLE": "PEAK-Lite Backend v2 API",
+    "DESCRIPTION": "Learner-instructor matching and human-approved AI learning plans.",
+    "VERSION": "1.0.0",
+    "SERVE_INCLUDE_SCHEMA": False,
+}
+
+# Production-only hardening. Left off under DEBUG so local http:// dev still works.
+if not DEBUG:
+    # Render (and most PaaS hosts) terminate HTTPS at their own proxy, then forward
+    # the request to this container as plain HTTP with X-Forwarded-Proto set. Without
+    # this, SECURE_SSL_REDIRECT below can't tell the request was already secure and
+    # redirects every request -- a loop in front of a proxy that already handled TLS.
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+    SECURE_SSL_REDIRECT = True
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+    SECURE_REFERRER_POLICY = "same-origin"
+    X_FRAME_OPTIONS = "DENY"
+    SECURE_HSTS_SECONDS = 31536000
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True

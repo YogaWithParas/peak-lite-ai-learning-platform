@@ -1,6 +1,8 @@
 from django.contrib.auth.models import User
+from django.core.cache import cache
 from rest_framework import status
 from rest_framework.test import APITestCase
+from rest_framework.throttling import ScopedRateThrottle
 
 from .models import Instructor, Learner, LearningPlan, MatchRecommendation, Profile
 
@@ -82,6 +84,24 @@ class MatchRecommendationTests(BaseSetup):
         instructor_names = [r["instructor"] for r in response.data["recommendations"]]
         self.assertNotIn("Sam Rivera", instructor_names)  # capacity is 0
 
+    def test_case_manager_can_approve_match_recommendation(self):
+        recommendation = MatchRecommendation.objects.create(
+            learner=self.learner,
+            instructor=self.instructor,
+            score=85,
+            reason="test",
+            created_by=self.case_manager,
+        )
+
+        self.client.force_authenticate(self.case_manager)
+        response = self.client.post(f"/api/match-recommendations/{recommendation.id}/approve/", {}, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        recommendation.refresh_from_db()
+        self.assertEqual(recommendation.status, MatchRecommendation.STATUS_APPROVED)
+        self.assertEqual(recommendation.reviewed_by, self.case_manager)
+        self.assertIsNotNone(recommendation.reviewed_at)
+
     def test_instructor_can_only_view_their_own_recommendations(self):
         own_recommendation = MatchRecommendation.objects.create(
             learner=self.learner,
@@ -104,7 +124,7 @@ class MatchRecommendationTests(BaseSetup):
         self.client.force_authenticate(self.instructor_user)
         response = self.client.get("/api/match-recommendations/")
 
-        ids = [r["id"] for r in response.data]
+        ids = [r["id"] for r in response.data["results"]]
         self.assertIn(own_recommendation.id, ids)
         self.assertNotIn(other_recommendation.id, ids)
 
@@ -117,6 +137,17 @@ class LearningPlanTests(BaseSetup):
             ai_draft="AI generated draft text",
             created_by=self.case_manager,
         )
+
+    def test_case_manager_can_create_learning_plan(self):
+        self.client.force_authenticate(self.case_manager)
+        response = self.client.post(
+            "/api/learning-plans/", {"learner_id": self.learner.id}, format="json"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["status"], "draft")
+        self.assertTrue(response.data["ai_draft"])  # a stub draft was generated
+        self.assertIsNone(response.data["approved_plan"])
 
     def test_case_manager_can_approve_learning_plan(self):
         self.client.force_authenticate(self.case_manager)
@@ -136,3 +167,49 @@ class LearningPlanTests(BaseSetup):
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
         self.plan.refresh_from_db()
         self.assertEqual(self.plan.status, LearningPlan.STATUS_DRAFT)
+
+
+class MeEndpointTests(BaseSetup):
+    def test_me_returns_username_and_role(self):
+        self.client.force_authenticate(self.instructor_user)
+        response = self.client.get("/api/auth/me/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["username"], "instr1")
+        self.assertEqual(response.data["role"], Profile.ROLE_INSTRUCTOR)
+
+    def test_me_requires_authentication(self):
+        response = self.client.get("/api/auth/me/")
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+
+class HardeningTests(BaseSetup):
+    def test_learner_list_is_paginated(self):
+        self.client.force_authenticate(self.case_manager)
+        response = self.client.get("/api/learners/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn("results", response.data)
+        self.assertIn("count", response.data)
+        self.assertEqual(response.data["count"], Learner.objects.count())
+
+    def test_match_recommendation_creation_is_throttled(self):
+        # ScopedRateThrottle.THROTTLE_RATES is bound from settings once at import
+        # time, so override_settings() alone won't lower it for this test --
+        # patch the class attribute directly instead, and restore it after.
+        cache.clear()
+        original_rates = ScopedRateThrottle.THROTTLE_RATES
+        ScopedRateThrottle.THROTTLE_RATES = {**original_rates, "match_recommendations": "1/min"}
+        try:
+            self.client.force_authenticate(self.case_manager)
+            first = self.client.post(
+                "/api/match-recommendations/", {"learner_id": self.learner.id}, format="json"
+            )
+            second = self.client.post(
+                "/api/match-recommendations/", {"learner_id": self.learner.id}, format="json"
+            )
+        finally:
+            ScopedRateThrottle.THROTTLE_RATES = original_rates
+
+        self.assertEqual(first.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(second.status_code, status.HTTP_429_TOO_MANY_REQUESTS)

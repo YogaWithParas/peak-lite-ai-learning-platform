@@ -6,3 +6,4 @@ venv/
 *.sqlite3
 .next/
 .DS_Store
+.claude/settings.local.json
