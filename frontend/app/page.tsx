@@ -2,14 +2,11 @@
 
 import Link from "next/link"
 import { useEffect, useState, type FormEvent } from "react"
-import { Check, LogOut, Loader2, Sparkles, WifiOff, X } from "lucide-react"
-import { Badge } from "@/components/ui/badge"
+import { LogOut, Loader2, Sparkles, WifiOff } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
 import {
   type ApiAccount,
@@ -34,58 +31,17 @@ import {
   rejectLearningPlan,
   rejectMatchRecommendation,
 } from "@/lib/peak-lite-api"
+import { AccountsScreen } from "@/components/peak-lite/accounts-screen"
+import { DEMO_ACCOUNTS, DEMO_PASSWORD, NAV_ITEMS, ROLE_LABELS, type Role, type Screen } from "@/components/peak-lite/constants"
+import { DashboardScreen } from "@/components/peak-lite/dashboard-screen"
+import { InstructorsScreen } from "@/components/peak-lite/instructors-screen"
+import { LearnersScreen } from "@/components/peak-lite/learners-screen"
+import { LearningPlansScreen } from "@/components/peak-lite/learning-plans-screen"
+import { MatchCenterScreen } from "@/components/peak-lite/match-center-screen"
+import { MatchScreen } from "@/components/peak-lite/match-screen"
+import { PlanScreen } from "@/components/peak-lite/plan-screen"
 
 type Status = "checking" | "signed-out" | "signed-in" | "unreachable"
-type Screen = "dashboard" | "match" | "plan"
-type Role = "admin" | "case_manager" | "instructor" | "family"
-
-const DEMO_PASSWORD = "peaklite-demo-2026"
-const DEMO_ACCOUNTS: { role: Role; label: string; username: string }[] = [
-  { role: "admin", label: "Admin", username: "admin_demo" },
-  { role: "case_manager", label: "Case Manager", username: "casemanager_demo" },
-  { role: "instructor", label: "Instructor", username: "jordan_lee" },
-  { role: "family", label: "Family", username: "family_chen" },
-]
-const ROLE_LABELS: Record<Role, string> = {
-  admin: "Admin",
-  case_manager: "Case Manager",
-  instructor: "Instructor",
-  family: "Family Member",
-}
-const NAV_ITEMS: Record<Role, string[]> = {
-  admin: ["Dashboard", "Learners", "Instructors", "Match Center", "Learning Plans", "Accounts"],
-  case_manager: ["Dashboard", "Learners", "Instructors", "Match Center", "Learning Plans"],
-  instructor: ["My Learners"],
-  family: ["My Learner"],
-}
-// Mirrors backend/core/matching.py's MAX_SKILL_SCORE / MAX_AVAILABILITY_SCORE / MAX_CAPACITY_SCORE.
-const SCORE_ROWS: { key: "skill_score" | "availability_score" | "capacity_score"; label: string; max: number }[] = [
-  { key: "skill_score", label: "Skill match", max: 60 },
-  { key: "availability_score", label: "Availability match", max: 20 },
-  { key: "capacity_score", label: "Capacity headroom", max: 20 },
-]
-
-function initials(name: string) {
-  return name
-    .split(" ")
-    .map((p) => p[0])
-    .slice(0, 2)
-    .join("")
-    .toUpperCase()
-}
-
-function matchBadge(matched: boolean) {
-  return matched
-    ? { label: "Matched", variant: "success" as const }
-    : { label: "Unmatched", variant: "outline" as const }
-}
-
-function planBadge(plan: ApiLearningPlan | null) {
-  if (!plan) return { label: "No Plan", variant: "outline" as const }
-  if (plan.status === "approved") return { label: "Approved ✓", variant: "success" as const }
-  if (plan.status === "rejected") return { label: "Rejected", variant: "destructive" as const }
-  return { label: "AI Draft — Pending Review", variant: "secondary" as const }
-}
 
 export default function HomePage() {
   const [status, setStatus] = useState<Status>("checking")
@@ -96,6 +52,8 @@ export default function HomePage() {
   const [me, setMe] = useState<Me | null>(null)
 
   const [screen, setScreen] = useState<Screen>("dashboard")
+  // Where to return to after finishing a match/plan opened from any screen.
+  const [returnScreen, setReturnScreen] = useState<Screen>("dashboard")
   const [activeLearnerId, setActiveLearnerId] = useState<number | null>(null)
 
   const [learners, setLearners] = useState<ApiLearner[]>([])
@@ -185,6 +143,7 @@ export default function HomePage() {
     setPlans([])
     setAccounts([])
     setScreen("dashboard")
+    setReturnScreen("dashboard")
     setActiveLearnerId(null)
     setStatus("signed-out")
   }
@@ -195,16 +154,15 @@ export default function HomePage() {
     setPlans(plansData)
   }
 
-  function goDashboard() {
-    setScreen("dashboard")
-  }
-
-  function openMatch(learnerId: number) {
+  function openMatch(learnerId: number, from: Screen) {
     setActiveLearnerId(learnerId)
     setMatchCandidateIndex(0)
     setMatchError(null)
+    setReturnScreen(from)
     setScreen("match")
-    if (!matches.some((m) => m.learner === learnerId)) {
+    // Auto-run a fresh match only if there's no live candidate already --
+    // a learner whose only record was rejected still needs a fresh run.
+    if (!matches.some((m) => m.learner === learnerId && m.status !== "rejected")) {
       void runMatch(learnerId)
     }
   }
@@ -229,7 +187,7 @@ export default function HomePage() {
     try {
       await approveMatchRecommendation(id)
       await refreshMatchesAndPlans()
-      setScreen("dashboard")
+      setScreen(returnScreen)
     } catch (err) {
       setMatchError(err instanceof Error ? err.message : "Approve failed.")
     } finally {
@@ -238,6 +196,8 @@ export default function HomePage() {
   }
 
   async function handleRejectMatch(id: number) {
+    // Deliberately does not navigate away -- lets the user pick an
+    // alternative candidate for the same learner right after rejecting.
     setMatchActionLoading(true)
     setMatchError(null)
     try {
@@ -250,9 +210,10 @@ export default function HomePage() {
     }
   }
 
-  function openPlan(learnerId: number) {
+  function openPlan(learnerId: number, from: Screen) {
     setActiveLearnerId(learnerId)
     setPlanError(null)
+    setReturnScreen(from)
     setScreen("plan")
     const existing = plans.find((p) => p.learner === learnerId)
     setPlanDraftText(existing ? existing.approved_plan || existing.ai_draft : "")
@@ -278,7 +239,7 @@ export default function HomePage() {
     try {
       const updated = await approveLearningPlan(planId, planDraftText)
       setPlans((prev) => prev.map((p) => (p.id === planId ? updated : p)))
-      setScreen("dashboard")
+      setScreen(returnScreen)
     } catch (err) {
       setPlanError(err instanceof Error ? err.message : "Approve failed.")
     } finally {
@@ -292,7 +253,7 @@ export default function HomePage() {
     try {
       const updated = await rejectLearningPlan(planId)
       setPlans((prev) => prev.map((p) => (p.id === planId ? updated : p)))
-      setScreen("dashboard")
+      setScreen(returnScreen)
     } catch (err) {
       setPlanError(err instanceof Error ? err.message : "Reject failed.")
     } finally {
@@ -301,10 +262,6 @@ export default function HomePage() {
   }
 
   const role = (me?.role ?? null) as Role | null
-  const isAdmin = role === "admin"
-  const isCMOperator = role === "case_manager" || role === "admin"
-  const isInstructor = role === "instructor"
-  const isFamily = role === "family"
 
   function matchStatusFor(learnerId: number) {
     const learnerMatches = matches.filter((m) => m.learner === learnerId)
@@ -312,13 +269,13 @@ export default function HomePage() {
     return { matched: !!approved, instructorName: approved?.instructor_name ?? null }
   }
 
-  function actionForLearner(learnerId: number) {
+  function actionForLearner(learnerId: number, from: Screen) {
     const { matched } = matchStatusFor(learnerId)
     const plan = plans.find((p) => p.learner === learnerId) ?? null
-    if (!matched) return { label: "Run Match", onClick: () => openMatch(learnerId) }
-    if (!plan) return { label: "Create Plan", onClick: () => openPlan(learnerId) }
-    if (plan.status === "draft") return { label: "Review Plan", onClick: () => openPlan(learnerId) }
-    return { label: "View Plan", onClick: () => openPlan(learnerId) }
+    if (!matched) return { label: "Run Match", onClick: () => openMatch(learnerId, from) }
+    if (!plan) return { label: "Create Plan", onClick: () => openPlan(learnerId, from) }
+    if (plan.status === "draft") return { label: "Review Plan", onClick: () => openPlan(learnerId, from) }
+    return { label: "View Plan", onClick: () => openPlan(learnerId, from) }
   }
 
   // ---------------------------------------------------------------- render
@@ -429,21 +386,19 @@ export default function HomePage() {
 
         <nav className="mt-4 flex flex-1 flex-col gap-1" aria-label="Main navigation">
           {role &&
-            NAV_ITEMS[role].map((label, i) => (
+            NAV_ITEMS[role].map((item) => (
               <button
-                key={label}
+                key={item.screen}
                 type="button"
-                onClick={i === 0 ? goDashboard : undefined}
+                onClick={() => setScreen(item.screen)}
                 className={cn(
                   "flex items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium transition-colors",
-                  i === 0 && screen === "dashboard"
+                  screen === item.screen
                     ? "bg-sidebar-primary text-sidebar-primary-foreground"
-                    : i === 0
-                      ? "text-sidebar-foreground hover:bg-sidebar-accent"
-                      : "cursor-default text-muted-foreground",
+                    : "text-sidebar-foreground hover:bg-sidebar-accent",
                 )}
               >
-                {label}
+                {item.label}
               </button>
             ))}
         </nav>
@@ -477,13 +432,40 @@ export default function HomePage() {
               instructors={instructors}
               matches={matches}
               plans={plans}
-              accounts={accounts}
-              actionForLearner={actionForLearner}
               matchStatusFor={matchStatusFor}
               instructorSelectedId={instructorSelectedId}
               setInstructorSelectedId={setInstructorSelectedId}
+              onNavigate={setScreen}
+              onOpenMatch={(id) => openMatch(id, "dashboard")}
+              onOpenPlan={(id) => openPlan(id, "dashboard")}
             />
           )}
+
+          {screen === "learners" && (
+            <LearnersScreen
+              learners={learners}
+              plans={plans}
+              matchStatusFor={matchStatusFor}
+              actionFor={(id) => actionForLearner(id, "learners")}
+            />
+          )}
+
+          {screen === "instructors" && <InstructorsScreen instructors={instructors} matches={matches} />}
+
+          {screen === "matchCenter" && (
+            <MatchCenterScreen learners={learners} matches={matches} onOpenMatch={(id) => openMatch(id, "matchCenter")} />
+          )}
+
+          {screen === "learningPlans" && (
+            <LearningPlansScreen
+              learners={learners}
+              plans={plans}
+              matchStatusFor={matchStatusFor}
+              onOpenPlan={(id) => openPlan(id, "learningPlans")}
+            />
+          )}
+
+          {screen === "accounts" && <AccountsScreen accounts={accounts} />}
 
           {screen === "match" && activeLearnerId !== null && (
             <MatchScreen
@@ -496,7 +478,7 @@ export default function HomePage() {
               error={matchError}
               onApprove={handleApproveMatch}
               onReject={handleRejectMatch}
-              onBack={goDashboard}
+              onBack={() => setScreen(returnScreen)}
             />
           )}
 
@@ -512,658 +494,11 @@ export default function HomePage() {
               onCreate={() => handleCreatePlan(activeLearnerId)}
               onApprove={(planId) => handleApprovePlan(planId)}
               onReject={(planId) => handleRejectPlan(planId)}
-              onBack={goDashboard}
+              onBack={() => setScreen(returnScreen)}
             />
           )}
         </div>
       </main>
-    </div>
-  )
-}
-
-// ------------------------------------------------------------- Dashboard
-
-function DashboardScreen({
-  role,
-  learners,
-  instructors,
-  matches,
-  plans,
-  accounts,
-  actionForLearner,
-  matchStatusFor,
-  instructorSelectedId,
-  setInstructorSelectedId,
-}: {
-  role: Role | null
-  learners: ApiLearner[]
-  instructors: ApiInstructor[]
-  matches: ApiMatchRecommendationDetail[]
-  plans: ApiLearningPlan[]
-  accounts: ApiAccount[]
-  actionForLearner: (id: number) => { label: string; onClick: () => void }
-  matchStatusFor: (id: number) => { matched: boolean; instructorName: string | null }
-  instructorSelectedId: number | null
-  setInstructorSelectedId: (id: number) => void
-}) {
-  const isAdmin = role === "admin"
-  const isCMOperator = role === "case_manager" || role === "admin"
-  const isInstructor = role === "instructor"
-  const isFamily = role === "family"
-
-  const title =
-    role === "admin"
-      ? "Admin Dashboard"
-      : role === "case_manager"
-        ? "Case Manager Dashboard"
-        : role === "instructor"
-          ? "My Learners"
-          : learners[0]
-            ? `${learners[0].full_name}'s Dashboard`
-            : "Dashboard"
-  const subtitle =
-    role === "admin"
-      ? "A calm overview of your matching program. Every recommendation is a starting point — educators stay in control of final decisions."
-      : role === "case_manager"
-        ? "Manage learners, instructors, matches, and learning plans."
-        : role === "instructor"
-          ? "Learners currently matched to you — read only."
-          : "Your learner's current match and learning plan status."
-
-  return (
-    <div>
-      <div className="mb-7">
-        <h1 className="text-2xl font-semibold tracking-tight text-balance text-foreground sm:text-[26px]">
-          {title}
-        </h1>
-        <p className="mt-1.5 max-w-2xl text-[14.5px] leading-relaxed text-muted-foreground">{subtitle}</p>
-      </div>
-
-      {isAdmin && (
-        <>
-          <div className="mb-7 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <StatCard label="Total Learners" value={learners.length} />
-            <StatCard label="Total Instructors" value={instructors.length} />
-            <StatCard label="Pending Matches" value={matches.filter((m) => m.status === "pending").length} tone="accent" />
-            <StatCard label="Approved Plans" value={plans.filter((p) => p.status === "approved").length} tone="success" />
-          </div>
-
-          <Card className="mb-7">
-            <CardHeader>
-              <CardTitle className="text-base">Accounts</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-2 gap-2 border-b border-border pb-2 text-[12.5px] font-semibold tracking-wide text-muted-foreground uppercase">
-                <div>Username</div>
-                <div>Role</div>
-              </div>
-              {accounts.map((a) => (
-                <div key={a.id} className="grid grid-cols-2 gap-2 border-b border-border py-3 text-sm last:border-0">
-                  <div className="font-medium text-foreground">{a.username}</div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-muted-foreground">{a.role ?? "—"}</span>
-                    <Badge variant="success">Active</Badge>
-                  </div>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-        </>
-      )}
-
-      {isCMOperator && (
-        <>
-          <h2 className="mb-3 text-[17px] font-semibold">Learners</h2>
-          <div className="mb-8 grid grid-cols-1 gap-4 [grid-template-columns:repeat(auto-fill,minmax(280px,1fr))]">
-            {learners.map((l) => {
-              const { matched, instructorName } = matchStatusFor(l.id)
-              const plan = plans.find((p) => p.learner === l.id) ?? null
-              const mb = matchBadge(matched)
-              const pb = planBadge(plan)
-              const action = actionForLearner(l.id)
-              return (
-                <Card key={l.id}>
-                  <CardContent className="flex flex-col gap-3.5 pt-5">
-                    <div className="flex items-center gap-3">
-                      <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-secondary text-sm font-semibold text-secondary-foreground">
-                        {initials(l.full_name)}
-                      </span>
-                      <div className="min-w-0">
-                        <div className="truncate text-[15px] font-semibold">{l.full_name}</div>
-                        <div className="text-xs text-muted-foreground">
-                          Instructor: {instructorName ?? "—"}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="flex flex-wrap gap-1.5">
-                      {l.learning_needs.map((need) => (
-                        <Badge key={need} variant="secondary">
-                          {need}
-                        </Badge>
-                      ))}
-                    </div>
-                    <div className="flex flex-wrap gap-1.5">
-                      <Badge variant={mb.variant}>{mb.label}</Badge>
-                      <Badge variant={pb.variant}>{pb.label}</Badge>
-                    </div>
-                    <Button size="sm" variant="outline" className="mt-auto" onClick={action.onClick}>
-                      {action.label}
-                    </Button>
-                  </CardContent>
-                </Card>
-              )
-            })}
-          </div>
-
-          <h2 className="mb-3 text-[17px] font-semibold">Instructors</h2>
-          <div className="grid grid-cols-1 gap-4 [grid-template-columns:repeat(auto-fill,minmax(280px,1fr))]">
-            {instructors.map((ins) => {
-              const caseload = matches.filter((m) => m.instructor === ins.id && m.status === "approved").length
-              const pct = ins.capacity > 0 ? Math.min((caseload / ins.capacity) * 100, 100) : 100
-              const full = caseload >= ins.capacity
-              return (
-                <Card key={ins.id}>
-                  <CardContent className="flex flex-col gap-3.5 pt-5">
-                    <div className="flex items-center gap-3">
-                      <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-secondary text-sm font-semibold text-secondary-foreground">
-                        {initials(ins.full_name)}
-                      </span>
-                      <div className="min-w-0">
-                        <div className="truncate text-[15px] font-semibold">{ins.full_name}</div>
-                        <div className="text-xs text-muted-foreground">{ins.availability.join(", ")}</div>
-                      </div>
-                    </div>
-                    <div className="flex flex-wrap gap-1.5">
-                      {ins.skills.map((s) => (
-                        <Badge key={s} variant="secondary">
-                          {s}
-                        </Badge>
-                      ))}
-                    </div>
-                    <div>
-                      <div className="mb-1.5 flex justify-between text-[11.5px] font-medium tracking-wide text-muted-foreground uppercase">
-                        <span>Caseload</span>
-                        <span>
-                          {caseload}/{ins.capacity}
-                        </span>
-                      </div>
-                      <div className="h-1.5 w-full overflow-hidden rounded-full bg-secondary">
-                        <div
-                          className={cn("h-full rounded-full", full ? "bg-destructive" : "bg-primary")}
-                          style={{ width: `${pct}%` }}
-                        />
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              )
-            })}
-          </div>
-        </>
-      )}
-
-      {isInstructor && (
-        <div className="flex flex-col gap-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">My Learners</CardTitle>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-1">
-              {learners.length === 0 && (
-                <p className="text-sm text-muted-foreground">No learners assigned yet.</p>
-              )}
-              {learners.map((l) => {
-                const { matched } = matchStatusFor(l.id)
-                const plan = plans.find((p) => p.learner === l.id) ?? null
-                const mb = matchBadge(matched)
-                const pb = planBadge(plan)
-                const selected = l.id === instructorSelectedId
-                return (
-                  <button
-                    key={l.id}
-                    type="button"
-                    onClick={() => setInstructorSelectedId(l.id)}
-                    className={cn(
-                      "flex items-center justify-between rounded-lg px-3 py-2.5 text-left",
-                      selected ? "bg-secondary" : "hover:bg-muted",
-                    )}
-                  >
-                    <div className="flex items-center gap-3">
-                      <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-secondary text-xs font-semibold text-secondary-foreground">
-                        {initials(l.full_name)}
-                      </span>
-                      <span className="text-sm font-medium">{l.full_name}</span>
-                    </div>
-                    <div className="flex gap-1.5">
-                      <Badge variant={mb.variant}>{mb.label}</Badge>
-                      <Badge variant={pb.variant}>{pb.label}</Badge>
-                    </div>
-                  </button>
-                )
-              })}
-            </CardContent>
-          </Card>
-
-          {(() => {
-            const selected = learners.find((l) => l.id === instructorSelectedId) ?? learners[0] ?? null
-            if (!selected) return null
-            const plan = plans.find((p) => p.learner === selected.id) ?? null
-            return (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base">{selected.full_name} — Learning Plan</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  {plan?.status === "approved" ? (
-                    <>
-                      <Badge variant="success" className="mb-3">
-                        Approved ✓
-                      </Badge>
-                      <p className="text-sm leading-relaxed">{plan.approved_plan}</p>
-                    </>
-                  ) : (
-                    <div className="rounded-lg border border-dashed border-accent-foreground/30 bg-accent p-4">
-                      <Badge variant="secondary" className="mb-2">
-                        Pending Review
-                      </Badge>
-                      <p className="text-sm leading-relaxed text-accent-foreground">
-                        This learning plan is still being reviewed by the case manager and hasn&apos;t
-                        been approved yet.
-                      </p>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            )
-          })()}
-        </div>
-      )}
-
-      {isFamily &&
-        (() => {
-          const learner = learners[0] ?? null
-          if (!learner) {
-            return <p className="text-sm text-muted-foreground">No learner linked to your account yet.</p>
-          }
-          const { matched, instructorName } = matchStatusFor(learner.id)
-          const plan = plans.find((p) => p.learner === learner.id) ?? null
-          const mb = matchBadge(matched)
-          return (
-            <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base">Instructor Match</CardTitle>
-                  <p className="text-xs text-muted-foreground">For {learner.full_name}</p>
-                </CardHeader>
-                <CardContent>
-                  <div className="mb-2.5 text-lg font-semibold">{instructorName ?? "Not yet matched"}</div>
-                  <Badge variant={mb.variant}>{mb.label}</Badge>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base">Learning Plan</CardTitle>
-                  <p className="text-xs text-muted-foreground">For {learner.full_name}</p>
-                </CardHeader>
-                <CardContent>
-                  {plan?.status === "approved" ? (
-                    <>
-                      <Badge variant="success" className="mb-3">
-                        Approved ✓
-                      </Badge>
-                      <p className="text-sm leading-relaxed">{plan.approved_plan}</p>
-                    </>
-                  ) : (
-                    <div className="rounded-lg border border-dashed border-accent-foreground/30 bg-accent p-4">
-                      <p className="text-sm leading-relaxed text-accent-foreground">
-                        Your case manager and instructor are finalizing this plan. You&apos;ll be
-                        notified once it&apos;s approved.
-                      </p>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            </div>
-          )
-        })()}
-    </div>
-  )
-}
-
-function StatCard({ label, value, tone }: { label: string; value: number; tone?: "accent" | "success" }) {
-  const bg = tone === "accent" ? "bg-accent" : tone === "success" ? "bg-secondary" : "bg-card border border-border"
-  const fg = tone === "accent" ? "text-accent-foreground" : "text-foreground"
-  return (
-    <div className={cn("rounded-xl p-4.5", bg)}>
-      <p className={cn("text-[13.5px] font-medium", tone ? fg : "text-muted-foreground")}>{label}</p>
-      <p className={cn("mt-2.5 text-3xl font-semibold tracking-tight", fg)}>{value}</p>
-    </div>
-  )
-}
-
-// ----------------------------------------------------------------- Match
-
-function MatchScreen({
-  learner,
-  candidates,
-  candidateIndex,
-  setCandidateIndex,
-  running,
-  actionLoading,
-  error,
-  onApprove,
-  onReject,
-  onBack,
-}: {
-  learner: ApiLearner | null
-  candidates: ApiMatchRecommendationDetail[]
-  candidateIndex: number
-  setCandidateIndex: (i: number) => void
-  running: boolean
-  actionLoading: boolean
-  error: string | null
-  onApprove: (id: number) => void
-  onReject: (id: number) => void
-  onBack: () => void
-}) {
-  const candidate = candidates[candidateIndex] ?? null
-  const next = candidates[candidateIndex + 1] ?? null
-
-  return (
-    <div>
-      <button
-        type="button"
-        onClick={onBack}
-        className="mb-3 text-[13px] font-medium text-muted-foreground hover:text-foreground"
-      >
-        ← Back to Dashboard
-      </button>
-      <div className="mb-6">
-        <h1 className="text-2xl font-semibold tracking-tight">Match result</h1>
-        <p className="mt-1.5 max-w-xl text-[14.5px] text-muted-foreground">
-          Recommended instructor for {learner?.full_name ?? "this learner"} (needs:{" "}
-          {learner?.learning_needs.join(", ") ?? "—"}). Review the reasoning below, then approve or
-          reject.
-        </p>
-      </div>
-
-      {running ? (
-        <p className="text-sm text-muted-foreground">Calling POST /api/match-recommendations/…</p>
-      ) : !candidate ? (
-        <p className="text-sm text-muted-foreground">
-          No suitable instructors found — none matched on skills, or all are at capacity.
-        </p>
-      ) : (
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-[2fr_1fr]">
-          <div className="flex flex-col gap-5">
-            <Card className="border-primary">
-              <CardContent className="flex flex-wrap items-start justify-between gap-4 pt-5">
-                <div className="flex items-center gap-3.5">
-                  <span className="flex size-12 shrink-0 items-center justify-center rounded-full bg-primary text-base font-semibold text-primary-foreground">
-                    {initials(candidate.instructor_name)}
-                  </span>
-                  <div>
-                    <Badge variant="secondary" className="mb-1">
-                      Recommended
-                    </Badge>
-                    <div className="text-lg font-semibold">{candidate.instructor_name}</div>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <div className="text-3xl font-semibold tracking-tight">{candidate.score}</div>
-                  <div className="text-xs text-muted-foreground">Match score / 100</div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-[15.5px]">Score breakdown</CardTitle>
-              </CardHeader>
-              <CardContent className="flex flex-col gap-3.5">
-                {SCORE_ROWS.map((row) => {
-                  const value = candidate.score_breakdown[row.key]
-                  const pct = row.max > 0 ? (value / row.max) * 100 : 0
-                  return (
-                    <div key={row.key}>
-                      <div className="mb-1.5 flex justify-between text-[13.5px]">
-                        <span>{row.label}</span>
-                        <span className="font-medium text-muted-foreground">
-                          {value} / {row.max}
-                        </span>
-                      </div>
-                      <div className="h-1.5 w-full overflow-hidden rounded-full bg-secondary">
-                        <div className="h-full rounded-full bg-primary" style={{ width: `${pct}%` }} />
-                      </div>
-                    </div>
-                  )
-                })}
-              </CardContent>
-            </Card>
-
-            <Card className="bg-secondary">
-              <CardContent className="pt-5">
-                <h2 className="mb-2.5 text-[15.5px] font-semibold">Why this match</h2>
-                <p className="text-[14.5px] leading-relaxed">{candidate.reason}</p>
-                <p className="mt-3.5 text-xs text-muted-foreground">
-                  AI-generated explanation. Please verify against your own knowledge of the learner.
-                </p>
-              </CardContent>
-            </Card>
-          </div>
-
-          <div className="flex flex-col gap-5">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-[15.5px]">Decision</CardTitle>
-              </CardHeader>
-              <CardContent className="flex flex-col gap-2.5">
-                {candidate.status === "pending" ? (
-                  <>
-                    <Button disabled={actionLoading} onClick={() => onApprove(candidate.id)}>
-                      <Check className="size-4" aria-hidden="true" />
-                      Approve match
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      className="text-destructive hover:text-destructive"
-                      disabled={actionLoading}
-                      onClick={() => onReject(candidate.id)}
-                    >
-                      <X className="size-4" aria-hidden="true" />
-                      Reject &amp; start over
-                    </Button>
-                    <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                      Nothing is finalized automatically — this only takes effect once you approve
-                      it.
-                    </p>
-                  </>
-                ) : (
-                  <Badge variant={candidate.status === "approved" ? "success" : "destructive"}>
-                    {candidate.status}
-                  </Badge>
-                )}
-                {error && <p className="text-sm text-destructive">{error}</p>}
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-[15.5px]">Alternative instructor</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {next ? (
-                  <button
-                    type="button"
-                    onClick={() => setCandidateIndex(candidateIndex + 1)}
-                    className="flex w-full items-center justify-between gap-3 py-2 text-left"
-                  >
-                    <div className="flex items-center gap-2.5">
-                      <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-secondary text-xs font-semibold text-secondary-foreground">
-                        {initials(next.instructor_name)}
-                      </span>
-                      <span className="text-[13.5px] font-medium">{next.instructor_name}</span>
-                    </div>
-                    <span className="text-sm font-semibold">{next.score}</span>
-                  </button>
-                ) : (
-                  <p className="text-[13px] text-muted-foreground">
-                    No further alternatives — this is the only remaining candidate.
-                  </p>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ------------------------------------------------------------------ Plan
-
-function PlanScreen({
-  learner,
-  plan,
-  approvedInstructorName,
-  draftText,
-  setDraftText,
-  loading,
-  error,
-  onCreate,
-  onApprove,
-  onReject,
-  onBack,
-}: {
-  learner: ApiLearner | null
-  plan: ApiLearningPlan | null
-  approvedInstructorName: string | null
-  draftText: string
-  setDraftText: (v: string) => void
-  loading: boolean
-  error: string | null
-  onCreate: () => void
-  onApprove: (planId: number) => void
-  onReject: (planId: number) => void
-  onBack: () => void
-}) {
-  return (
-    <div>
-      <button
-        type="button"
-        onClick={onBack}
-        className="mb-3 text-[13px] font-medium text-muted-foreground hover:text-foreground"
-      >
-        ← Back to Dashboard
-      </button>
-      <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Learning plan review</h1>
-          <p className="mt-1.5 max-w-lg text-[14.5px] text-muted-foreground">
-            Review and finalize the draft plan. Nothing is committed until you give final approval.
-          </p>
-        </div>
-        {plan && (
-          <Badge variant={plan.status === "approved" ? "success" : "secondary"}>
-            {plan.status === "approved" ? "Approved" : "Draft review"}
-          </Badge>
-        )}
-      </div>
-
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[2fr_1fr]">
-        <div className="flex flex-col gap-5">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Card>
-              <CardContent className="pt-5">
-                <h2 className="mb-2.5 text-sm font-semibold">Learner summary</h2>
-                <div className="mb-1 text-[15px] font-semibold">{learner?.full_name}</div>
-                <div className="text-[13px] text-muted-foreground">
-                  Needs: {learner?.learning_needs.join(", ") ?? "—"}
-                </div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="pt-5">
-                <h2 className="mb-2.5 text-sm font-semibold">Instructor summary</h2>
-                <div className="text-[15px] font-semibold">{approvedInstructorName ?? "Not yet matched"}</div>
-              </CardContent>
-            </Card>
-          </div>
-
-          {!plan ? (
-            <Button variant="outline" disabled={loading} onClick={onCreate} className="self-start">
-              <Sparkles className="size-4" aria-hidden="true" />
-              {loading ? "Drafting…" : "Draft AI learning plan"}
-            </Button>
-          ) : plan.status === "approved" ? (
-            <Card>
-              <CardContent className="pt-5">
-                <p className="text-[14px] leading-relaxed">{plan.approved_plan}</p>
-              </CardContent>
-            </Card>
-          ) : (
-            <Card>
-              <CardContent className="flex flex-col gap-3 pt-5">
-                <Label htmlFor="plan-draft">AI draft (editable before approval)</Label>
-                <Textarea
-                  id="plan-draft"
-                  value={draftText}
-                  onChange={(e) => setDraftText(e.target.value)}
-                  rows={6}
-                  className="bg-card"
-                />
-              </CardContent>
-            </Card>
-          )}
-        </div>
-
-        <Card>
-          <CardContent className="pt-5">
-            {plan?.status === "approved" ? (
-              <div className="flex flex-col items-center gap-3.5 rounded-lg bg-secondary p-6 text-center">
-                <span className="flex size-11 items-center justify-center rounded-full bg-primary text-lg font-bold text-primary-foreground">
-                  ✓
-                </span>
-                <div>
-                  <p className="font-semibold">Plan approved</p>
-                  <p className="mt-1 text-[13px] text-muted-foreground">
-                    {learner?.full_name} is now paired with {approvedInstructorName ?? "an instructor"}.
-                  </p>
-                </div>
-                <Button variant="outline" className="w-full" onClick={onBack}>
-                  Back to dashboard
-                </Button>
-              </div>
-            ) : plan ? (
-              <>
-                <h2 className="mb-2.5 text-[15.5px] font-semibold">Final approval</h2>
-                <p className="mb-4 text-[13.5px] leading-relaxed text-muted-foreground">
-                  By approving, you confirm this plan reflects your professional judgment. You can
-                  still edit the text above first.
-                </p>
-                <div className="flex flex-col gap-2.5">
-                  <Button disabled={loading} onClick={() => onApprove(plan.id)}>
-                    <Check className="size-4" aria-hidden="true" />
-                    Approve support plan
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    className="text-destructive hover:text-destructive"
-                    disabled={loading}
-                    onClick={() => onReject(plan.id)}
-                  >
-                    <X className="size-4" aria-hidden="true" />
-                    Reject
-                  </Button>
-                </div>
-                {error && <p className="mt-3 text-sm text-destructive">{error}</p>}
-              </>
-            ) : (
-              <p className="text-sm text-muted-foreground">Draft a plan to review it here.</p>
-            )}
-          </CardContent>
-        </Card>
-      </div>
     </div>
   )
 }
