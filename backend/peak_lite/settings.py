@@ -119,6 +119,11 @@ SPECTACULAR_SETTINGS = {
 
 # Production-only hardening. Left off under DEBUG so local http:// dev still works.
 if not DEBUG:
+    # Render (and most PaaS hosts) terminate HTTPS at their own proxy, then forward
+    # the request to this container as plain HTTP with X-Forwarded-Proto set. Without
+    # this, SECURE_SSL_REDIRECT below can't tell the request was already secure and
+    # redirects every request -- a loop in front of a proxy that already handled TLS.
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
     SECURE_SSL_REDIRECT = True
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
