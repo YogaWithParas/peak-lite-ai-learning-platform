@@ -7,8 +7,11 @@ services:
     dockerContext: backend
     # Overrides the Dockerfile's default CMD (which runs Django's dev server,
     # fine for local Docker Compose) with a real production server for the
-    # public deployment: migrate, then gunicorn bound to Render's assigned $PORT.
-    dockerCommand: sh -c "python manage.py migrate && gunicorn peak_lite.wsgi:application --bind 0.0.0.0:$PORT"
+    # public deployment. Delegates to start.sh rather than an inline shell
+    # string here -- Render's dockerCommand field doesn't reliably parse
+    # nested quotes/&&, which caused the first deploy attempt to fail with
+    # "sh: 1: python manage.py migrate && gunicorn ...: not found".
+    dockerCommand: sh start.sh
     envVars:
       - key: SECRET_KEY
         generateValue: true
